@@ -10,7 +10,7 @@ from data.config import ADMINS
 from componets.messages import messages, buttons
 
 router = Router()
-DEEPSEEK_URL = "https://chat.deepseek.com/"
+
 
 # Tilni tanlash uchun inline tugmalar
 languages_markup = InlineKeyboardMarkup(inline_keyboard=[
@@ -28,7 +28,6 @@ def get_keyboard(language):
             [InlineKeyboardButton(text=buttons[language]["btn_new_chat"], callback_data="new_chat")],
             [InlineKeyboardButton(text=buttons[language]["btn_stop"], callback_data="stop_chat")],
             [InlineKeyboardButton(text=buttons[language]["btn_continue"], callback_data="continue_chat")],
-            [InlineKeyboardButton(text=buttons[language]["btn_webapp"], web_app=WebAppInfo(url=DEEPSEEK_URL))],
             [InlineKeyboardButton(text=buttons[language]["btn_change_lang"], callback_data="change_language")]
         ]
     )
