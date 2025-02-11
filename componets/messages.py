@@ -39,6 +39,7 @@ buttons = {
 
 messages = {
     "uz": {
+        "choose_lang": "🌍 Iltimos, tilni tanlang:\n\n🇺🇿 O‘zbekcha | 🇷🇺 Русский | 🇺🇸 English",
         "start": "<b>🤖 AI Chatbot bilan suhbatni boshladingiz!</b>\n\nSavollaringizni yozing.\n\n❌ Chiqish uchun /stop ni yuboring.",
         "stop": "AI Chatbot bilan suhbat yakunlandi.\nQayta boshlash uchun /chat ni yozing.",
         "not_started": "Avval /chat ni yuborib suhbatni boshlang.",
