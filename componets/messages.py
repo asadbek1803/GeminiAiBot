@@ -45,7 +45,7 @@ messages = {
         "not_started": "Avval /chat ni yuborib suhbatni boshlang.",
         "limit_reached": "❌ Siz maksimal 20 ta savol berdingiz. Suhbat tugadi.\nQayta boshlash uchun /chat ni yozing.",
         "error": "Xatolik yuz berdi: {}",
-        "bot_response": "<b>🤖 ChatBot:</b>\n\n{}",
+        "bot_response": "<b>Gemini:</b>\n\n{}",
         "thinking": "⌛ O'ylamoqda..."
     },
     "ru": {
@@ -54,7 +54,7 @@ messages = {
         "not_started": "Сначала отправьте /chat, чтобы начать чат.",
         "limit_reached": "❌ Вы задали 20 вопросов. Чат завершен.\nЧтобы начать заново, отправьте /chat.",
         "error": "Произошла ошибка: {}",
-        "bot_response": "<b>🤖 ChatBot:</b>\n\n{}",
+        "bot_response": "<b>Gemini:</b>\n\n{}",
         "thinking": "⌛ Думаю..."
     },
     "eng": {
@@ -63,7 +63,7 @@ messages = {
         "not_started": "Please send /chat to start a conversation.",
         "limit_reached": "❌ You have reached the maximum of 20 questions. Chat ended.\nTo restart, send /chat.",
         "error": "An error occurred: {}",
-        "bot_response": "<b>🤖 ChatBot:</b>\n\n{}",
+        "bot_response": "<b>Gemini:</b>\n\n{}",
         "thinking": "⌛ Thinking..."
     }
 }
