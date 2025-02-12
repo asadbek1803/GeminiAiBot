@@ -110,7 +110,7 @@ async def chat_with_ai(message: types.Message):
     """AI chatbotga foydalanuvchi xabarini yuborish va javob olish."""
     
     telegram_id = message.from_user.id
-    
+    global msg
     if telegram_id not in user_sessions:
         user = await db.select_user(telegram_id=telegram_id)
         language = user.get("language", "uz") if user else "uz"
@@ -119,8 +119,9 @@ async def chat_with_ai(message: types.Message):
             parse_mode=ParseMode.HTML,
             reply_markup=get_keyboard(language)
         )
+        
         return
-
+    
     session = user_sessions[telegram_id]
     language = session["language"]
     
@@ -133,7 +134,7 @@ async def chat_with_ai(message: types.Message):
         )
         return
 
-    await msg.delete()
+    msg.delete()
     thinking_message = await message.answer(
         text=messages[language]["thinking"],
         parse_mode=ParseMode.HTML
