@@ -9,6 +9,7 @@ from aiogram.fsm.context import FSMContext
 from data.config import ADMINS
 from componets.messages import messages, buttons
 from datetime import datetime
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
 router = Router()
 
@@ -23,14 +24,16 @@ languages_markup = InlineKeyboardMarkup(inline_keyboard=[
 
 
 def get_keyboard(language):
-    """Foydalanuvchi tiliga mos Inline tugmalarni qaytaradi."""
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text=buttons[language]["btn_new_chat"], callback_data="new_chat")],
-            [InlineKeyboardButton(text=buttons[language]["btn_stop"], callback_data="stop_chat")],
-            [InlineKeyboardButton(text=buttons[language]["btn_continue"], callback_data="continue_chat")],
-            [InlineKeyboardButton(text=buttons[language]["btn_change_lang"], callback_data="change_language")]
-        ]
+    """Foydalanuvchi tiliga mos Reply tugmalarni qaytaradi."""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text=buttons[language]["btn_new_chat"])],
+            [KeyboardButton(text=buttons[language]["btn_stop"])],
+            [KeyboardButton(text=buttons[language]["btn_continue"])],
+            [KeyboardButton(text=buttons[language]["btn_change_lang"])]
+        ],
+        resize_keyboard=True,  # Makes the keyboard smaller and neater
+        one_time_keyboard=False  # Keyboard stays after clicking
     )
 
 
@@ -126,6 +129,7 @@ async def create_account(callback_data: types.CallbackQuery, state: FSMContext):
 
 
 @router.message(Command("change_language"))
+@router.message(lambda message: message.text == buttons[message.from_user.language]["btn_change_lang"])
 @router.callback_query(lambda callback_data: callback_data.data == "change_language")
 async def change_language(callback_data: types.CallbackQuery):
     """Foydalanuvchiga tilni tanlash menyusini ko‘rsatish."""

@@ -8,6 +8,7 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from aiogram.enums.parse_mode import ParseMode
 from loader import bot, db
 from data.config import API_KEY
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
 
 
@@ -18,14 +19,16 @@ router = Router()
 
 
 def get_keyboard(language):
-    """Foydalanuvchi tiliga mos Inline tugmalarni qaytaradi."""
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text=buttons[language]["btn_new_chat"], callback_data="new_chat")],
-            [InlineKeyboardButton(text=buttons[language]["btn_stop"], callback_data="stop_chat")],
-            [InlineKeyboardButton(text=buttons[language]["btn_continue"], callback_data="continue_chat")],
-            [InlineKeyboardButton(text=buttons[language]["btn_change_lang"], callback_data="change_language")]
-        ]
+    """Foydalanuvchi tiliga mos Reply tugmalarni qaytaradi."""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text=buttons[language]["btn_new_chat"])],
+            [KeyboardButton(text=buttons[language]["btn_stop"])],
+            [KeyboardButton(text=buttons[language]["btn_continue"])],
+            [KeyboardButton(text=buttons[language]["btn_change_lang"])]
+        ],
+        resize_keyboard=True,  # Makes the keyboard smaller and neater
+        one_time_keyboard=False  # Keyboard stays after clicking
     )
 
 
@@ -61,6 +64,7 @@ def format_text(text):
 
 
 @router.message(Command("chat"))
+@router.message(lambda message: message.text == buttons[message.from_user.language]["btn_new_chat"])
 @router.callback_query(lambda c: c.data == "new_chat")
 async def start_chat(message: types.Message):
     """Foydalanuvchi bilan AI chatbot orqali suhbatni boshlash."""
@@ -85,6 +89,7 @@ async def start_chat(message: types.Message):
     )
 
 @router.message(Command("stop"))
+@router.message(lambda message: message.text == buttons[message.from_user.language]["btn_stop"])
 @router.callback_query(lambda c: c.data == "stop_chat")
 async def stop_chat(message: types.Message):
     """Foydalanuvchi bilan suhbatni to'xtatish."""
