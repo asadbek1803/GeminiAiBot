@@ -22,10 +22,8 @@ def get_keyboard(language):
     """Foydalanuvchi tiliga mos Reply tugmalarni qaytaradi."""
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text=buttons[language]["btn_new_chat"])],
-            [KeyboardButton(text=buttons[language]["btn_stop"])],
-            [KeyboardButton(text=buttons[language]["btn_continue"])],
-            [KeyboardButton(text=buttons[language]["btn_change_lang"])]
+            [KeyboardButton(text=buttons[language]["btn_new_chat"]), KeyboardButton(text=buttons[language]["btn_stop"])],
+            [KeyboardButton(text=buttons[language]["btn_continue"]), KeyboardButton(text=buttons[language]["btn_change_lang"])],
         ],
         resize_keyboard=True,  # Makes the keyboard smaller and neater
         one_time_keyboard=False  # Keyboard stays after clicking
@@ -64,7 +62,9 @@ def format_text(text):
 
 
 @router.message(Command("chat"))
-@router.message(lambda message: message.text == buttons[message.from_user.language]["btn_new_chat"])
+@router.message(lambda message: message.text == buttons["uz"]["btn_new_chat"] or
+                              message.text == buttons["ru"]["btn_new_chat"] or
+                              message.text == buttons["eng"]["btn_new_chat"])
 @router.callback_query(lambda c: c.data == "new_chat")
 async def start_chat(message: types.Message):
     """Foydalanuvchi bilan AI chatbot orqali suhbatni boshlash."""
@@ -89,7 +89,9 @@ async def start_chat(message: types.Message):
     )
 
 @router.message(Command("stop"))
-@router.message(lambda message: message.text == buttons[message.from_user.language]["btn_stop"])
+@router.message(lambda message: message.text == buttons["uz"]["btn_stop"] or
+                              message.text == buttons["ru"]["btn_stop"] or
+                              message.text == buttons["eng"]["btn_stop"])
 @router.callback_query(lambda c: c.data == "stop_chat")
 async def stop_chat(message: types.Message):
     """Foydalanuvchi bilan suhbatni to'xtatish."""

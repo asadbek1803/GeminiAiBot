@@ -5,7 +5,7 @@ buttons = {
     "uz": {
         "start": "Assalomu alaykum <b>{name}</b>! Siz avval ro'yxatdan o'tgansiz 😊",
         "choose_lang": "Iltimos, tilni tanlang:",
-        "btn_new_chat": "🆕 Yangi Chat Boshlash",
+        "btn_new_chat": "💬 Yangi Chat",
         "btn_stop": "⛔ To'xtatish",
         "btn_continue": "🔄 Davom Ettirish",
         "btn_webapp": "🌐 DeepSeekni ochish",
@@ -14,7 +14,7 @@ buttons = {
     "ru": {
         "start": "Привет <b>{name}</b>! Вы уже зарегистрированы 😊",
         "choose_lang": "Пожалуйста, выберите язык:",
-        "btn_new_chat": "🆕 Начать новый чат",
+        "btn_new_chat": "💬 Начать новый чат",
         "btn_stop": "⛔ Остановить",
         "btn_continue": "🔄 Продолжить",
         "btn_webapp": "🌐 Открыть DeepSeek",
@@ -23,7 +23,7 @@ buttons = {
     "eng": {
         "start": "Hello <b>{name}</b>! You have already registered 😊",
         "choose_lang": "Please choose a language:",
-        "btn_new_chat": "🆕 Start a New Chat",
+        "btn_new_chat": "💬 Start a New Chat",
         "btn_stop": "⛔ Stop",
         "btn_continue": "🔄 Continue",
         "btn_webapp": "🌐 Open DeepSeek",
