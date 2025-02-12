@@ -79,7 +79,7 @@ async def start_chat(message: types.Message):
             "language": language
         }
 
-    await message.answer(
+    await message.message.answer(
         text=messages[language]["start"],
         parse_mode=ParseMode.HTML
     )
