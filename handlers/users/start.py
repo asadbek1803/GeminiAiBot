@@ -8,6 +8,7 @@ from aiogram.types.web_app_info import WebAppInfo
 from aiogram.fsm.context import FSMContext
 from data.config import ADMINS
 from componets.messages import messages, buttons
+from datetime import datetime
 
 router = Router()
 
@@ -88,7 +89,7 @@ async def create_account(callback_data: types.CallbackQuery, state: FSMContext):
             username=username,
             language=language
         )
-
+        now = datetime.now()
         success_msg, welcome_msg = welcome_messages[language]
 
         await callback_data.answer(text=success_msg)
@@ -97,13 +98,15 @@ async def create_account(callback_data: types.CallbackQuery, state: FSMContext):
             text=welcome_msg, 
             parse_mode=ParseMode.HTML
         )
+        
 
         # Adminlarga xabar yuborish
         admin_msg = (
             f"Yangi foydalanuvchi ro'yxatdan o'tdi ✅\n"
             f"👤 Ism: <b>{full_name}</b>\n"
             f"📌 Telegram ID: <code>{telegram_id}</code>\n"
-            f"🌍 Til: <b>{language.upper()}</b>"
+            f"🌍 Til: <b>{language.upper()}</b>\n"
+            f"📅 Qo'shilgan sana: <b> {now} </b>"
         )
         
         for admin in ADMINS:
@@ -137,12 +140,13 @@ async def change_language(callback_data: types.CallbackQuery):
         ]
     )
 
-    await bot.send_message(
+    msg = await bot.send_message(
         chat_id = callback_data.from_user.id,
         text="🌍 Iltimos, yangi tilni tanlang:\n\n🇺🇿 O‘zbekcha | 🇷🇺 Русский | 🇺🇸 English",
         reply_markup=language_buttons
     )
 
+    
 
 @router.callback_query(lambda callback_data: callback_data.data in ["update_uz", "update_ru", "update_eng"])
 async def update_language(callback_data: types.CallbackQuery):

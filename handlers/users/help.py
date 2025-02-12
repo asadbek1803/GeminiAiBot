@@ -11,7 +11,7 @@ async def bot_help(message: types.Message):
     ]
     channel_markup = InlineKeyboardMarkup(inline_keyboard=channel)
     text = ("Bot haqida: ",
-            "Bot Daha IT Companiyasi tomonidan yozilgan. DeepSeek AI",
+            "Bot Daha IT Companiyasi tomonidan yozilgan. Gemini AI",
             "Bot kommandalari: ",
             "/start - 🔄️ Botni ishga tushirish",
             "/change_language - 🌐 Tilni o'zgartirish",

@@ -114,7 +114,7 @@ async def chat_with_ai(message: types.Message):
     if telegram_id not in user_sessions:
         user = await db.select_user(telegram_id=telegram_id)
         language = user.get("language", "uz") if user else "uz"
-        await message.answer(
+        msg = await message.answer(
             text=messages[language]["not_started"],
             parse_mode=ParseMode.HTML,
             reply_markup=get_keyboard(language)
@@ -123,7 +123,8 @@ async def chat_with_ai(message: types.Message):
 
     session = user_sessions[telegram_id]
     language = session["language"]
-
+    
+    
     if session["message_count"] >= 20:
         del user_sessions[telegram_id]
         await message.answer(
@@ -132,6 +133,7 @@ async def chat_with_ai(message: types.Message):
         )
         return
 
+    await msg.delete()
     thinking_message = await message.answer(
         text=messages[language]["thinking"],
         parse_mode=ParseMode.HTML
