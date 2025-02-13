@@ -54,8 +54,8 @@ async def do_start(message: types.Message):
         )
 
 @router.message(lambda message: message.text in ["🇺🇿 O'zbek", "🇷🇺 Русский", "🇺🇸 English"])
-async def create_account(message: types.Message):
-    """Foydalanuvchini bazaga qo'shish va unga til tanlanganiga qarab xabar yuborish."""
+async def create_or_update_account(message: types.Message):
+    """Foydalanuvchini bazaga qo'shish yoki tilini yangilash."""
     telegram_id = message.from_user.id
     full_name = message.from_user.full_name
     username = message.from_user.username
@@ -72,13 +72,17 @@ async def create_account(message: types.Message):
     }
 
     try:
-        await db.add_user(
-            telegram_id=telegram_id,
-            full_name=full_name,
-            username=username,
-            language=language
-        )
-        now = datetime.now()
+        user = await db.select_user(telegram_id=telegram_id)
+        if user:
+            await db.update_user_language(telegram_id, language)
+        else:
+            await db.add_user(
+                telegram_id=telegram_id,
+                full_name=full_name,
+                username=username,
+                language=language
+            )
+        
         success_msg, welcome_msg = welcome_messages[language]
         await message.answer(text=success_msg)
         await message.answer(
@@ -86,45 +90,5 @@ async def create_account(message: types.Message):
             parse_mode=ParseMode.HTML,
             reply_markup=get_keyboard(language=language)
         )
-
-        admin_msg = (
-            f"Yangi foydalanuvchi ro'yxatdan o'tdi ✅\n"
-            f"👤 Ism: <b>{full_name}</b>\n"
-            f"📌 Telegram ID: <code>{telegram_id}</code>\n"
-            f"🌍 Til: <b>{language.upper()}</b>\n"
-            f"📅 Qo'shilgan sana: <b> {now} </b>"
-        )
-
-        for admin in ADMINS:
-            try:
-                await bot.send_message(
-                    chat_id=admin, 
-                    text=admin_msg, 
-                    parse_mode=ParseMode.HTML
-                )
-            except Exception as error:
-                logger.info(f"Xatolik: Admin {admin} ga xabar jo'natilmadi. {error}")
     except Exception as e:
         await message.answer(text=f"Xatolik yuz berdi ❌\n{str(e)}")
-
-@router.message(Command("change_language"))
-@router.message(lambda message: message.text == buttons["uz"]["btn_change_lang"] or
-                              message.text == buttons["ru"]["btn_change_lang"] or
-                              message.text == buttons["eng"]["btn_change_lang"])
-async def change_language(message: types.Message):
-    """Foydalanuvchiga tilni tanlash menyusini ko‘rsatish."""
-    await message.answer("🌍 Iltimos, yangi tilni tanlang:", reply_markup=language_keyboard())
-
-@router.message(lambda message: message.text in ["🇺🇿 O'zbek", "🇷🇺 Русский", "🇺🇸 English"])
-async def update_language(message: types.Message):
-    """Foydalanuvchining tilini bazada yangilash."""
-    telegram_id = message.from_user.id
-    language_map = {"🇺🇿 O'zbek": "uz", "🇷🇺 Русский": "ru", "🇺🇸 English": "eng"}
-    new_language = language_map[message.text]
-    await db.update_user_language(telegram_id, new_language)
-    confirmation_messages = {
-        "uz": "✅ Til muvaffaqiyatli o‘zgartirildi.",
-        "ru": "✅ Язык успешно изменен.",
-        "eng": "✅ Language successfully changed."
-    }
-    await message.answer(text=confirmation_messages[new_language], reply_markup=get_keyboard(new_language))
