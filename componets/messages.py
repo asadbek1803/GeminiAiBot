@@ -47,7 +47,8 @@ messages = {
         "error": "Xatolik yuz berdi: {}",
         "bot_response": "<b>Gemini:</b>\n\n{}",
         "thinking": "⌛ O'ylamoqda...",
-        "time_waiter": "⏳Iltimos, biroz kuting va qayta urinib ko'ring!"
+        "time_waiter": "⏳Iltimos, biroz kuting va qayta urinib ko'ring!",
+        "start_command": "<b> 🤖 AI Chatbot bilan suhbatni boshlash uchun /chat buyrug'ini yuboring yoki pastdagi tugmalardan foydalaning. \n\n ❌ Chiqish uchun /stop ni yuboring.</b>"
     },
     "ru": {
         "start": "<b>🤖 Вы начали чат с AI Chatbot!</b>\n\nЗадайте свой вопрос.\n\n❌ Чтобы выйти, отправьте /stop.",
@@ -57,7 +58,8 @@ messages = {
         "error": "Произошла ошибка: {}",
         "bot_response": "<b>Gemini:</b>\n\n{}",
         "thinking": "⌛ Думаю...",
-        "time_waiter": "⏳Пожалуйста, подождите немного и повторите попытку.!"
+        "time_waiter": "⏳Пожалуйста, подождите немного и повторите попытку.!",
+         "start_command": "<b> 🤖 Отправьте команду /chat или воспользуйтесь кнопками ниже, чтобы начать разговор с AI Chatbot. \n\n ❌ Отправьте /stop для выхода.</b>"
     },
     "eng": {
         "start": "<b>🤖 You started a chat with AI Chatbot!</b>\n\nAsk your questions.\n\n❌ To exit, send /stop.",
@@ -67,6 +69,7 @@ messages = {
         "error": "An error occurred: {}",
         "bot_response": "<b>Gemini:</b>\n\n{}",
         "thinking": "⌛ Thinking...",
-        "time_waiter": "⏳Please wait a while and try again!"
+        "time_waiter": "⏳Please wait a while and try again!",
+         "start_command": "<b> 🤖 Send the /chat command or use the buttons below to start a conversation with the AI ​​Chatbot. \n\n ❌ Send /stop to exit.</b>"
     }
 }

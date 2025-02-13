@@ -39,7 +39,7 @@ async def do_start(message: types.Message):
 
     if user:
         language = user.get("language", "uz")
-        text = messages[language]["start"].format(name=full_name)
+        text = messages[language]["start_command"].format(name=full_name)
         await message.answer(
             text=text,
             parse_mode=ParseMode.HTML,
