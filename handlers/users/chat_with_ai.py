@@ -36,6 +36,9 @@ def format_text(text):
     return text
 
 @router.message(Command("chat"))
+@router.message(lambda message: message.text == buttons["uz"]["btn_new_chat"] or
+                                message.text == buttons["ru"]["btn_new_chat"] or
+                                message.text == buttons["eng"]["btn_new_chat"])
 async def start_chat(message: types.Message):
     """Foydalanuvchi bilan AI chatbotni boshlash."""
     telegram_id = message.from_user.id
