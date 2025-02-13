@@ -30,52 +30,25 @@ def get_keyboard(language):
     )
 
 
-
-# Har bir foydalanuvchi uchun chat sessiyasini saqlash
 user_sessions = {}
+user_last_request_time = {}
 
-# Foydalanuvchi tiliga mos xabarlarni sozlash
-
+    
 
 def format_text(text):
-    """Matnni HTML formatiga o'tkazish (bold, italic, underline, strikethrough, code)"""
-    
-    # Kod bloklarini formatlash
-    text = re.sub(r"```([a-zA-Z]*)\n(.*?)```", r"<pre><code class='\1'>\2</code></pre>", text, flags=re.DOTALL)
-    
-    # Inline code
-    text = re.sub(r"`([^`]*)`", r"<code>\1</code>", text)
-    
-    # Bold
-    text = re.sub(r"\*\*([^*]+)\*\*", r"<b>\1</b>", text)
-    
-    # Italic
-    text = re.sub(r"\*([^*]+)\*", r"<i>\1</i>", text)
-    
-    # Underline
-    text = re.sub(r"__([^_]+)__", r"<u>\1</u>", text)
-    
-    # Strikethrough
-    text = re.sub(r"~~([^~]+)~~", r"<s>\1</s>", text)
-    
+    """Matnni HTML formatiga o'tkazish"""
+    text = re.sub(r"\*\*([^*]+)\*\*", r"<b>\1</b>", text)  # Bold
+    text = re.sub(r"\*([^*]+)\*", r"<i>\1</i>", text)  # Italic
+    text = re.sub(r"`([^`]*)`", r"<code>\1</code>", text)  # Inline code
     return text
 
-
 @router.message(Command("chat"))
-@router.message(lambda message: message.text == buttons["uz"]["btn_new_chat"] or
-                              message.text == buttons["ru"]["btn_new_chat"] or
-                              message.text == buttons["eng"]["btn_new_chat"])
-@router.callback_query(lambda c: c.data == "new_chat")
 async def start_chat(message: types.Message):
-    """Foydalanuvchi bilan AI chatbot orqali suhbatni boshlash."""
-    
+    """Foydalanuvchi bilan AI chatbotni boshlash."""
     telegram_id = message.from_user.id
-
-    # Foydalanuvchining tilini bazadan olish
     user = await db.select_user(telegram_id=telegram_id)
     language = user.get("language", "uz") if user else "uz"
 
-    # Agar foydalanuvchi uchun sessiya mavjud bo'lmasa, yangisini yaratamiz
     if telegram_id not in user_sessions:
         user_sessions[telegram_id] = {
             "chat": model.start_chat(),
@@ -84,87 +57,64 @@ async def start_chat(message: types.Message):
         }
 
     await message.answer(
-        text=messages[language]["start"],
+        text="Chat boshlash uchun xabar yuboring!",
         parse_mode=ParseMode.HTML
     )
 
 @router.message(Command("stop"))
-@router.message(lambda message: message.text == buttons["uz"]["btn_stop"] or
-                              message.text == buttons["ru"]["btn_stop"] or
-                              message.text == buttons["eng"]["btn_stop"])
-@router.callback_query(lambda c: c.data == "stop_chat")
 async def stop_chat(message: types.Message):
-    """Foydalanuvchi bilan suhbatni to'xtatish."""
-    
+    """Foydalanuvchi chatni to'xtatadi."""
     telegram_id = message.from_user.id
-    user = await db.select_user(telegram_id=telegram_id)
-    language = user.get("language", "uz") if user else "uz"
-
+    user = db.select_user(telegram_id=telegram_id)
     if telegram_id in user_sessions:
         del user_sessions[telegram_id]
-        await message.answer(
-            text=messages[language]["stop"],
-            parse_mode=ParseMode.HTML
-        )
+        await message.answer(text = messages[user(3)]["stop"], parse_mode=ParseMode.HTML)
     else:
-        await message.answer(
-            text=messages[language]["not_started"],
-            parse_mode=ParseMode.HTML
-        )
+        await message.answer(text= messages[user(3)]["not_started"], parse_mode=ParseMode.HTML)
 
 @router.message()
 async def chat_with_ai(message: types.Message):
-    """AI chatbotga foydalanuvchi xabarini yuborish va javob olish."""
-    
+    """Foydalanuvchidan kelgan xabarga AI javob qaytaradi."""
     telegram_id = message.from_user.id
-    
+    user = db.select_user(telegram_id = telegram_id)
+    # Foydalanuvchi uchun vaqtni tekshirish
+    now = asyncio.get_event_loop().time()
+    if telegram_id in user_last_request_time:
+        elapsed_time = now - user_last_request_time[telegram_id]
+        if elapsed_time < 1:  # Har bir foydalanuvchi uchun 1 soniyali limit
+            await message.answer(text = messages[user(3)]["time_waiter"])
+            return
+
+    user_last_request_time[telegram_id] = now
+
     if telegram_id not in user_sessions:
-        user = await db.select_user(telegram_id=telegram_id)
-        language = user.get("language", "uz") if user else "uz"
-        msg = await message.answer(
-            text=messages[language]["not_started"],
-            parse_mode=ParseMode.HTML,
-            reply_markup=get_keyboard(language)
-        )
-        
-        return
-    
-    session = user_sessions[telegram_id]
-    language = session["language"]
-    
-    
-    if session["message_count"] >= 20:
-        del user_sessions[telegram_id]
-        await message.answer(
-            text=messages[language]["limit_reached"],
-            parse_mode=ParseMode.HTML
-        )
+        await message.answer(text= messages[user(3)]["not_started"], parse_mode=ParseMode.HTML)
         return
 
-    
-    thinking_message = await message.answer(
-        text=messages[language]["thinking"],
-        parse_mode=ParseMode.HTML
-    )
+    session = user_sessions[telegram_id]
+    language = session["language"]
+
+    if session["message_count"] >= 20:
+        del user_sessions[telegram_id]
+        await message.answer(text=messages[user(3)]["limit_reached"], parse_mode=ParseMode.HTML)
+        return
+
+    thinking_message = await message.answer(text = messages[user(3)]["thinking"])
 
     try:
         response = session["chat"].send_message(message.text)
         session["message_count"] += 1  
 
-        # Matnni to'liq formatlash (kod va markdown)
         formatted_response = format_text(response.text)
 
+        await asyncio.sleep(1)  # Har bir so‘rov orasida 1 soniya kutish
         await thinking_message.delete()
 
         await message.answer(
-            text=messages[language]["bot_response"].format(formatted_response),
+            text=formatted_response,
             parse_mode=ParseMode.HTML
         )
 
     except Exception as e:
         await thinking_message.delete()
-        
-        await message.answer(
-            text=messages[language]["error"].format(str(e)),
-            parse_mode=ParseMode.HTML
-        )
+        await message.answer(f"Xatolik yuz berdi: {str(e)}", parse_mode=ParseMode.HTML)

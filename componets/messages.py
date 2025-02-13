@@ -46,7 +46,8 @@ messages = {
         "limit_reached": "❌ Siz maksimal 20 ta savol berdingiz. Suhbat tugadi.\nQayta boshlash uchun /chat ni yozing.",
         "error": "Xatolik yuz berdi: {}",
         "bot_response": "<b>Gemini:</b>\n\n{}",
-        "thinking": "⌛ O'ylamoqda..."
+        "thinking": "⌛ O'ylamoqda...",
+        "time_waiter": "⏳Iltimos, biroz kuting va qayta urinib ko'ring!"
     },
     "ru": {
         "start": "<b>🤖 Вы начали чат с AI Chatbot!</b>\n\nЗадайте свой вопрос.\n\n❌ Чтобы выйти, отправьте /stop.",
@@ -55,7 +56,8 @@ messages = {
         "limit_reached": "❌ Вы задали 20 вопросов. Чат завершен.\nЧтобы начать заново, отправьте /chat.",
         "error": "Произошла ошибка: {}",
         "bot_response": "<b>Gemini:</b>\n\n{}",
-        "thinking": "⌛ Думаю..."
+        "thinking": "⌛ Думаю...",
+        "time_waiter": "⏳Пожалуйста, подождите немного и повторите попытку.!"
     },
     "eng": {
         "start": "<b>🤖 You started a chat with AI Chatbot!</b>\n\nAsk your questions.\n\n❌ To exit, send /stop.",
@@ -64,6 +66,7 @@ messages = {
         "limit_reached": "❌ You have reached the maximum of 20 questions. Chat ended.\nTo restart, send /chat.",
         "error": "An error occurred: {}",
         "bot_response": "<b>Gemini:</b>\n\n{}",
-        "thinking": "⌛ Thinking..."
+        "thinking": "⌛ Thinking...",
+        "time_waiter": "⏳Please wait a while and try again!"
     }
 }
