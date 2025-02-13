@@ -8,7 +8,7 @@ async def set_default_commands(bot: Bot):
         BotCommand(command="/start", description="🔄️ Botni ishga tushirish"),
         BotCommand(command="/help", description="📑 Yordam"),
         BotCommand(command="/change_language", description="🌐 Tilni o'zgartirish"),
-        BotCommand(command="/new_chat", description="🤖 Yangi chat"),
-        BotCommand(command="/stop_chat", description="❌ Chatni to'xtatish")
+        BotCommand(command="/chat", description="🤖 Yangi chat"),
+        BotCommand(command="/stop", description="❌ Chatni to'xtatish")
     ]
     await bot.set_my_commands(commands=commands, scope=BotCommandScopeAllPrivateChats())
