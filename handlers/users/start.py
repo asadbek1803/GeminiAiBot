@@ -87,10 +87,16 @@ async def create_or_update_account(message: types.Message):
                 f"Hello <b>{full_name}</b>! Welcome to our Gemini AI bot 😊")
     }
 
+    update_messages = {
+        "uz": ("Til muvaffiqiyatli yangilandi ✅"),
+        "ru": ("Язык успешно обновлен ✅"),
+        "eng": ("The language has been updated successfully ✅")
+    }
     try:
         user = await db.select_user(telegram_id=telegram_id)
         if user:
             await db.update_user_language(telegram_id, language)
+            await message.answer(text = update_messages[language], reply_markup=get_keyboard(language))
         else:
             await db.add_user(
                 telegram_id=telegram_id,
@@ -99,12 +105,12 @@ async def create_or_update_account(message: types.Message):
                 language=language
             )
         
-        success_msg, welcome_msg = welcome_messages[language]
-        await message.answer(text=success_msg)
-        await message.answer(
-            text=welcome_msg,
-            parse_mode=ParseMode.HTML,
-            reply_markup=get_keyboard(language=language)
-        )
+            success_msg, welcome_msg = welcome_messages[language]
+            await message.answer(text=success_msg)
+            await message.answer(
+                text=welcome_msg,
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_keyboard(language=language)
+            )
     except Exception as e:
         await message.answer(text=f"Xatolik yuz berdi ❌\n{str(e)}")
