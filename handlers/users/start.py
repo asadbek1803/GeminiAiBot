@@ -53,6 +53,22 @@ async def do_start(message: types.Message):
             parse_mode=ParseMode.HTML
         )
 
+@router.message(Command("change_language"))
+@router.message(lambda message: message.text == buttons["uz"]["btn_change_lang"] or
+                                message.text == buttons["ru"]["btn_change_lang"] or
+                                message.text == buttons["eng"]["btn_change_lang"])
+async def get_lang_keyboards(message: types.Message):
+
+    
+    msg = await bot.send_message(
+                chat_id = message.from_user.id,
+                text="🌍 Iltimos, yangi tilni tanlang:\n\n🇺🇿 O‘zbekcha | 🇷🇺 Русский | 🇺🇸 English",
+                reply_markup=language_keyboard()
+            )
+
+
+
+
 @router.message(lambda message: message.text in ["🇺🇿 O'zbek", "🇷🇺 Русский", "🇺🇸 English"])
 async def create_or_update_account(message: types.Message):
     """Foydalanuvchini bazaga qo'shish yoki tilini yangilash."""
