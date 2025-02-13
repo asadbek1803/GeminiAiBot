@@ -98,7 +98,8 @@ async def create_account(callback_data: types.CallbackQuery, state: FSMContext):
         await bot.send_message(
             chat_id=telegram_id, 
             text=welcome_msg, 
-            parse_mode=ParseMode.HTML
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_keyboard(language=language)
         )
         
 
