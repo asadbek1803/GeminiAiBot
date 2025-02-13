@@ -52,7 +52,7 @@ async def start_chat(message: types.Message):
             "language": language
         }
 
-    await message.answer(text="Chat boshlash uchun xabar yuboring!", parse_mode=ParseMode.HTML)
+    await message.answer(text=messages[language]["start"], parse_mode=ParseMode.HTML)
 
 @router.message(Command("stop"))
 async def stop_chat(message: types.Message):
