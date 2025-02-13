@@ -68,9 +68,9 @@ async def stop_chat(message: types.Message):
     user = db.select_user(telegram_id=telegram_id)
     if telegram_id in user_sessions:
         del user_sessions[telegram_id]
-        await message.answer(text = messages[user(3)]["stop"], parse_mode=ParseMode.HTML)
+        await message.answer(text = messages[user["language"]]["stop"], parse_mode=ParseMode.HTML)
     else:
-        await message.answer(text= messages[user(3)]["not_started"], parse_mode=ParseMode.HTML)
+        await message.answer(text= messages[user["language"]]["not_started"], parse_mode=ParseMode.HTML)
 
 @router.message()
 async def chat_with_ai(message: types.Message):
@@ -82,13 +82,13 @@ async def chat_with_ai(message: types.Message):
     if telegram_id in user_last_request_time:
         elapsed_time = now - user_last_request_time[telegram_id]
         if elapsed_time < 1:  # Har bir foydalanuvchi uchun 1 soniyali limit
-            await message.answer(text = messages[user(3)]["time_waiter"])
+            await message.answer(text=messages[user["language"]]["time_waiter"])
             return
 
     user_last_request_time[telegram_id] = now
 
     if telegram_id not in user_sessions:
-        await message.answer(text= messages[user(3)]["not_started"], parse_mode=ParseMode.HTML)
+        await message.answer(text= messages[user["language"]]["not_started"], parse_mode=ParseMode.HTML)
         return
 
     session = user_sessions[telegram_id]
@@ -96,10 +96,10 @@ async def chat_with_ai(message: types.Message):
 
     if session["message_count"] >= 20:
         del user_sessions[telegram_id]
-        await message.answer(text=messages[user(3)]["limit_reached"], parse_mode=ParseMode.HTML)
+        await message.answer(text=messages[user["language"]]["limit_reached"], parse_mode=ParseMode.HTML)
         return
 
-    thinking_message = await message.answer(text = messages[user(3)]["thinking"])
+    thinking_message = await message.answer(text = messages[user["language"]]["thinking"])
 
     try:
         response = session["chat"].send_message(message.text)
