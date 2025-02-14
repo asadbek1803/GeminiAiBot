@@ -58,16 +58,11 @@ async def do_start(message: types.Message):
                                 message.text == buttons["ru"]["btn_change_lang"] or
                                 message.text == buttons["eng"]["btn_change_lang"])
 async def get_lang_keyboards(message: types.Message):
-
-    
     msg = await bot.send_message(
-                chat_id = message.from_user.id,
-                text="🌍 Iltimos, yangi tilni tanlang:\n\n🇺🇿 O‘zbekcha | 🇷🇺 Русский | 🇺🇸 English",
-                reply_markup=language_keyboard()
-            )
-
-
-
+        chat_id=message.from_user.id,
+        text="🌍 Iltimos, yangi tilni tanlang:\n\n🇺🇿 O‘zbekcha | 🇷🇺 Русский | 🇺🇸 English",
+        reply_markup=language_keyboard()
+    )
 
 @router.message(lambda message: message.text in ["🇺🇿 O'zbek", "🇷🇺 Русский", "🇺🇸 English"])
 async def create_or_update_account(message: types.Message):
@@ -75,6 +70,7 @@ async def create_or_update_account(message: types.Message):
     telegram_id = message.from_user.id
     full_name = message.from_user.full_name
     username = message.from_user.username
+    created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     language_map = {"🇺🇿 O'zbek": "uz", "🇷🇺 Русский": "ru", "🇺🇸 English": "eng"}
     language = language_map[message.text]
 
@@ -88,23 +84,23 @@ async def create_or_update_account(message: types.Message):
     }
 
     update_messages = {
-        "uz": ("Til muvaffiqiyatli yangilandi ✅"),
-        "ru": ("Язык успешно обновлен ✅"),
-        "eng": ("The language has been updated successfully ✅")
+        "uz": "Til muvaffiqiyatli yangilandi ✅",
+        "ru": "Язык успешно обновлен ✅",
+        "eng": "The language has been updated successfully ✅"
     }
     try:
         user = await db.select_user(telegram_id=telegram_id)
         if user:
             await db.update_user_language(telegram_id, language)
-            await message.answer(text = update_messages[language], reply_markup=get_keyboard(language))
+            await message.answer(text=update_messages[language], reply_markup=get_keyboard(language))
         else:
             await db.add_user(
                 telegram_id=telegram_id,
                 full_name=full_name,
                 username=username,
-                language=language
+                language=language,
+                created_at=created_at
             )
-        
             success_msg, welcome_msg = welcome_messages[language]
             await message.answer(text=success_msg)
             await message.answer(
@@ -112,5 +108,11 @@ async def create_or_update_account(message: types.Message):
                 parse_mode=ParseMode.HTML,
                 reply_markup=get_keyboard(language=language)
             )
+            for admin in ADMINS:
+                try:
+                    admin_message = f"🆕 Yangi foydalanuvchi qo'shildi:\n👤 Ism: {full_name}\n🔹 Username: @{username}\n🆔 Telegram ID: {telegram_id}\n📅 Qo'shilgan vaqt: {created_at}"
+                    await bot.send_message(chat_id=admin, text=admin_message, parse_mode=ParseMode.HTML)
+                except Exception as e:
+                    logger.error(f"Adminga xabar yuborishda xatolik: {e}")
     except Exception as e:
         await message.answer(text=f"Xatolik yuz berdi ❌\n{str(e)}")
