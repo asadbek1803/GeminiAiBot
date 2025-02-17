@@ -98,8 +98,7 @@ async def create_or_update_account(message: types.Message):
                 telegram_id=telegram_id,
                 full_name=full_name,
                 username=username,
-                language=language,
-                created_at=created_at
+                language=language
             )
             success_msg, welcome_msg = welcome_messages[language]
             await message.answer(text=success_msg)
