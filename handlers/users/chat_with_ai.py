@@ -116,7 +116,7 @@ async def handle_voice(message: types.Message):
 
     try:
         # Download voice message
-        voice = await message.voice.get_file()
+        voice = await bot.get_file(message.voice.file_id)
         voice_path = f"temp_{message.message_id}.oga"
         await bot.download_file(voice.file_path, voice_path)
         
