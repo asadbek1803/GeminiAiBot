@@ -8,6 +8,9 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram.enums.parse_mode import ParseMode
 from loader import bot, db
 from data.config import API_KEY
+import speech_recognition as sr
+import os
+from pydub import AudioSegment
 
 ai.configure(api_key=API_KEY)
 model = ai.GenerativeModel("gemini-pro")
@@ -24,15 +27,43 @@ def get_keyboard(language):
             [KeyboardButton(text=buttons[language]["btn_new_chat"]), KeyboardButton(text=buttons[language]["btn_stop"])],
             [KeyboardButton(text=buttons[language]["btn_continue"]), KeyboardButton(text=buttons[language]["btn_change_lang"])],
         ],
-        resize_keyboard=True,  # Makes the keyboard smaller and neater
-        one_time_keyboard=False  # Keyboard stays after clicking
+        resize_keyboard=True,
+        one_time_keyboard=False
     )
+
+async def convert_voice_to_text(voice_file_path: str, language: str = "uz-UZ") -> str:
+    """Ovozli xabarni matnga o'girish"""
+    try:
+        # Convert .oga to .wav format
+        audio = AudioSegment.from_ogg(voice_file_path)
+        wav_path = voice_file_path.replace(".oga", ".wav")
+        audio.export(wav_path, format="wav")
+
+        # Initialize recognizer
+        recognizer = sr.Recognizer()
+        
+        # Read the audio file
+        with sr.AudioFile(wav_path) as source:
+            audio_data = recognizer.record(source)
+            
+            # Convert speech to text
+            text = recognizer.recognize_google(audio_data, language=language)
+            
+        # Clean up temporary files
+        os.remove(voice_file_path)
+        os.remove(wav_path)
+        
+        return text
+    
+    except Exception as e:
+        print(f"Error in speech recognition: {str(e)}")
+        return ""
 
 def format_text(text):
     """Matnni HTML formatiga o'tkazish"""
-    text = re.sub(r"\*\*([^*]+)\*\*", r"<b>\1</b>", text)  # Bold
-    text = re.sub(r"\*([^*]+)\*", r"<i>\1</i>", text)  # Italic
-    text = re.sub(r"`([^`]*)`", r"<code>\1</code>", text)  # Inline code
+    text = re.sub(r"\*\*([^*]+)\*\*", r"<b>\1</b>", text)
+    text = re.sub(r"\*([^*]+)\*", r"<i>\1</i>", text)
+    text = re.sub(r"`([^`]*)`", r"<code>\1</code>", text)
     return text
 
 @router.message(Command("chat"))
@@ -67,27 +98,62 @@ async def stop_chat(message: types.Message):
     else:
         await message.answer(text=messages[language]["not_started"], parse_mode=ParseMode.HTML)
 
-@router.message()
-async def chat_with_ai(message: types.Message):
-    """Foydalanuvchidan kelgan xabarga AI javob qaytaradi."""
+@router.message(content_types=['voice'])
+async def handle_voice(message: types.Message):
+    """Ovozli xabarlarni qayta ishlash"""
     telegram_id = message.from_user.id
     user = await db.select_user(telegram_id=telegram_id)
     language = user["language"] if user else "uz"
     
-    # Foydalanuvchi uchun vaqtni tekshirish
-    now = asyncio.get_event_loop().time()
-    if telegram_id in user_last_request_time:
-        elapsed_time = now - user_last_request_time[telegram_id]
-        if elapsed_time < 1:  # Har bir foydalanuvchi uchun 1 soniyali limit
-            await message.answer(text=messages[language]["time_waiter"], parse_mode=ParseMode.HTML)
-            return
-
-    user_last_request_time[telegram_id] = now
-
     if telegram_id not in user_sessions:
         await message.answer(text=messages[language]["not_started"], parse_mode=ParseMode.HTML)
         return
 
+    thinking_message = await message.answer(text=messages[language]["voice_processing"], parse_mode=ParseMode.HTML)
+
+    try:
+        # Download voice message
+        voice = await message.voice.get_file()
+        voice_path = f"temp_{message.message_id}.oga"
+        await bot.download_file(voice.file_path, voice_path)
+
+        # Convert voice to text
+        lang_code = {"uz": "uz-UZ", "ru": "ru-RU", "eng": "en-US"}[language]
+        voice_text = await convert_voice_to_text(voice_path, lang_code)
+
+        if not voice_text:
+            await thinking_message.delete()
+            await message.answer(text=messages[language]["voice_error"], parse_mode=ParseMode.HTML)
+            return
+
+        # Show recognized text to user
+        await message.answer(
+            text=messages[language]["voice_recognized"].format(text=voice_text),
+            parse_mode=ParseMode.HTML
+        )
+
+        # Process the converted text with AI
+        await thinking_message.delete()
+        await process_message(message, voice_text)
+
+    except Exception as e:
+        await thinking_message.delete()
+        await message.answer(f"Xatolik yuz berdi: {str(e)}", parse_mode=ParseMode.HTML)
+
+async def process_message(message: types.Message, text: str = None):
+    """Xabarni qayta ishlash (matn yoki ovozdan o'girilgan)"""
+    telegram_id = message.from_user.id
+    user = await db.select_user(telegram_id=telegram_id)
+    language = user["language"] if user else "uz"
+    
+    now = asyncio.get_event_loop().time()
+    if telegram_id in user_last_request_time:
+        elapsed_time = now - user_last_request_time[telegram_id]
+        if elapsed_time < 1:
+            await message.answer(text=messages[language]["time_waiter"], parse_mode=ParseMode.HTML)
+            return
+
+    user_last_request_time[telegram_id] = now
     session = user_sessions[telegram_id]
 
     if session["message_count"] >= 20:
@@ -98,12 +164,13 @@ async def chat_with_ai(message: types.Message):
     thinking_message = await message.answer(text=messages[language]["thinking"], parse_mode=ParseMode.HTML)
 
     try:
-        response = session["chat"].send_message(message.text)
-        session["message_count"] += 1  
+        input_text = text if text else message.text
+        response = session["chat"].send_message(input_text)
+        session["message_count"] += 1
 
         formatted_response = format_text(response.text)
 
-        await asyncio.sleep(1)  # Har bir so‘rov orasida 1 soniya kutish
+        await asyncio.sleep(1)
         await thinking_message.delete()
 
         await message.answer(
@@ -114,3 +181,8 @@ async def chat_with_ai(message: types.Message):
     except Exception as e:
         await thinking_message.delete()
         await message.answer(f"Xatolik yuz berdi: {str(e)}", parse_mode=ParseMode.HTML)
+
+@router.message()
+async def chat_with_ai(message: types.Message):
+    """Foydalanuvchidan kelgan matnli xabarga AI javob qaytaradi."""
+    await process_message(message)
