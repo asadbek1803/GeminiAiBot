@@ -2,7 +2,7 @@ import re
 import asyncio
 import google.generativeai as ai
 from componets.messages import buttons, messages
-from aiogram import Router, types
+from aiogram import Router, types, F
 from aiogram.filters import Command
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram.enums.parse_mode import ParseMode
@@ -98,7 +98,7 @@ async def stop_chat(message: types.Message):
     else:
         await message.answer(text=messages[language]["not_started"], parse_mode=ParseMode.HTML)
 
-@router.message(content_types=['voice'])
+@router.message(F.voice)
 async def handle_voice(message: types.Message):
     """Ovozli xabarlarni qayta ishlash"""
     telegram_id = message.from_user.id
@@ -111,15 +111,28 @@ async def handle_voice(message: types.Message):
 
     thinking_message = await message.answer(text=messages[language]["voice_processing"], parse_mode=ParseMode.HTML)
 
+    voice_path = None
+    wav_path = None
+
     try:
         # Download voice message
         voice = await message.voice.get_file()
         voice_path = f"temp_{message.message_id}.oga"
         await bot.download_file(voice.file_path, voice_path)
-
+        
+        # Convert to wav for processing
+        wav_path = voice_path.replace(".oga", ".wav")
+        audio = AudioSegment.from_ogg(voice_path)
+        audio.export(wav_path, format="wav")
+        
         # Convert voice to text
         lang_code = {"uz": "uz-UZ", "ru": "ru-RU", "eng": "en-US"}[language]
-        voice_text = await convert_voice_to_text(voice_path, lang_code)
+        
+        # Initialize recognizer and process audio
+        recognizer = sr.Recognizer()
+        with sr.AudioFile(wav_path) as source:
+            audio_data = recognizer.record(source)
+            voice_text = recognizer.recognize_google(audio_data, language=lang_code)
 
         if not voice_text:
             await thinking_message.delete()
@@ -139,6 +152,16 @@ async def handle_voice(message: types.Message):
     except Exception as e:
         await thinking_message.delete()
         await message.answer(f"Xatolik yuz berdi: {str(e)}", parse_mode=ParseMode.HTML)
+    
+    finally:
+        # Clean up temporary files
+        try:
+            if voice_path and os.path.exists(voice_path):
+                os.remove(voice_path)
+            if wav_path and os.path.exists(wav_path):
+                os.remove(wav_path)
+        except Exception as e:
+            print(f"Error cleaning up files: {str(e)}")
 
 async def process_message(message: types.Message, text: str = None):
     """Xabarni qayta ishlash (matn yoki ovozdan o'girilgan)"""
