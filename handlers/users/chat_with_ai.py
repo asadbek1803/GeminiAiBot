@@ -11,6 +11,7 @@ from data.config import API_KEY
 import speech_recognition as sr
 import os
 from pydub import AudioSegment
+import ffmpeg
 
 ai.configure(api_key=API_KEY)
 model = ai.GenerativeModel("gemini-pro")
@@ -31,33 +32,7 @@ def get_keyboard(language):
         one_time_keyboard=False
     )
 
-async def convert_voice_to_text(voice_file_path: str, language: str = "uz-UZ") -> str:
-    """Ovozli xabarni matnga o'girish"""
-    try:
-        # Convert .oga to .wav format
-        audio = AudioSegment.from_ogg(voice_file_path)
-        wav_path = voice_file_path.replace(".oga", ".wav")
-        audio.export(wav_path, format="wav")
 
-        # Initialize recognizer
-        recognizer = sr.Recognizer()
-        
-        # Read the audio file
-        with sr.AudioFile(wav_path) as source:
-            audio_data = recognizer.record(source)
-            
-            # Convert speech to text
-            text = recognizer.recognize_google(audio_data, language=language)
-            
-        # Clean up temporary files
-        os.remove(voice_file_path)
-        os.remove(wav_path)
-        
-        return text
-    
-    except Exception as e:
-        print(f"Error in speech recognition: {str(e)}")
-        return ""
 
 def format_text(text):
     """Matnni HTML formatiga o'tkazish"""
@@ -97,6 +72,39 @@ async def stop_chat(message: types.Message):
         await message.answer(text=messages[language]["stop"], parse_mode=ParseMode.HTML)
     else:
         await message.answer(text=messages[language]["not_started"], parse_mode=ParseMode.HTML)
+async def convert_voice_to_text(voice_file_path: str, language: str = "uz-UZ") -> str:
+    """Ovozli xabarni matnga o'girish"""
+    try:
+        # Convert .oga to .wav format using ffmpeg
+        wav_path = voice_file_path.replace(".oga", ".wav")
+        
+        # Run ffmpeg conversion
+        stream = ffmpeg.input(voice_file_path)
+        stream = ffmpeg.output(stream, wav_path)
+        ffmpeg.run(stream, overwrite_output=True, capture_stdout=True, capture_stderr=True)
+
+        # Initialize recognizer
+        recognizer = sr.Recognizer()
+        
+        # Read the audio file
+        with sr.AudioFile(wav_path) as source:
+            audio_data = recognizer.record(source)
+            
+            # Convert speech to text
+            text = recognizer.recognize_google(audio_data, language=language)
+            
+        # Clean up temporary files
+        os.remove(voice_file_path)
+        os.remove(wav_path)
+        
+        return text
+    
+    except ffmpeg.Error as e:
+        print(f"FFmpeg error: {e.stderr.decode()}")
+        return ""
+    except Exception as e:
+        print(f"Error in speech recognition: {str(e)}")
+        return ""
 
 @router.message(F.voice)
 async def handle_voice(message: types.Message):
@@ -120,19 +128,9 @@ async def handle_voice(message: types.Message):
         voice_path = f"temp_{message.message_id}.oga"
         await bot.download_file(voice.file_path, voice_path)
         
-        # Convert to wav for processing
-        wav_path = voice_path.replace(".oga", ".wav")
-        audio = AudioSegment.from_ogg(voice_path)
-        audio.export(wav_path, format="wav")
-        
         # Convert voice to text
         lang_code = {"uz": "uz-UZ", "ru": "ru-RU", "eng": "en-US"}[language]
-        
-        # Initialize recognizer and process audio
-        recognizer = sr.Recognizer()
-        with sr.AudioFile(wav_path) as source:
-            audio_data = recognizer.record(source)
-            voice_text = recognizer.recognize_google(audio_data, language=lang_code)
+        voice_text = await convert_voice_to_text(voice_path, lang_code)
 
         if not voice_text:
             await thinking_message.delete()
@@ -154,10 +152,11 @@ async def handle_voice(message: types.Message):
         await message.answer(f"Xatolik yuz berdi: {str(e)}", parse_mode=ParseMode.HTML)
     
     finally:
-        # Clean up temporary files
+        # Clean up any remaining temporary files
         try:
             if voice_path and os.path.exists(voice_path):
                 os.remove(voice_path)
+            wav_path = voice_path.replace(".oga", ".wav")
             if wav_path and os.path.exists(wav_path):
                 os.remove(wav_path)
         except Exception as e:
