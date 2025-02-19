@@ -99,7 +99,7 @@ async def convert_voice_to_text(voice_file_path: str, language: str = "uz-UZ") -
         
         return text
     
-    except ffmpeg.Error as e:
+    except Exception as e:
         print(f"FFmpeg error: {e.stderr.decode()}")
         return ""
     except Exception as e:
