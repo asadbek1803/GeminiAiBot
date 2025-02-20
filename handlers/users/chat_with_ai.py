@@ -3,6 +3,9 @@ import os
 from typing import Optional
 import whisper
 import google.generativeai as ai
+import speech_recognition as sr
+import ffmpeg
+import re
 from aiogram import Router, types, F
 from aiogram.filters import Command
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
@@ -15,7 +18,7 @@ from componets.messages import buttons, messages
 ai.configure(api_key=API_KEY)
 model = ai.GenerativeModel("gemini-pro")
 
-# Initialize Whisper model (using small model for faster processing)
+# Initialize Whisper model
 whisper_model = whisper.load_model("small")
 
 router = Router()
@@ -25,21 +28,29 @@ user_sessions = {}
 user_last_request_time = {}
 
 def get_keyboard(language):
-    """Foydalanuvchi tiliga mos Reply tugmalarni qaytaradi."""
+    """Return Reply buttons matching user's language."""
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text=buttons[language]["btn_new_chat"]), KeyboardButton(text=buttons[language]["btn_stop"])],
-            [KeyboardButton(text=buttons[language]["btn_continue"]), KeyboardButton(text=buttons[language]["btn_change_lang"])]
+            [KeyboardButton(text=buttons[language]["btn_continue"]), KeyboardButton(text=buttons["btn_change_lang"])]
         ],
-        resize_keyboard=True
+        resize_keyboard=True,
+        one_time_keyboard=False
     )
+
+def format_text(text):
+    """Convert text to HTML format"""
+    text = re.sub(r"\*\*([^*]+)\*\*", r"<b>\1</b>", text)
+    text = re.sub(r"\*([^*]+)\*", r"<i>\1</i>", text)
+    text = re.sub(r"`([^`]*)`", r"<code>\1</code>", text)
+    return text
 
 # Supported languages
 SUPPORTED_LANGUAGES = {
-    "eng": "en",  # English
-    "ru": "ru",   # Russian
-    "uz": "uz",   # Uzbek
-    "tr": "tr"    # Turkish
+    "eng": {"code": "en", "speech": "en-US"},
+    "ru": {"code": "ru", "speech": "ru-RU"},
+    "uz": {"code": "uz", "speech": "uz-UZ"},
+    "tr": {"code": "tr", "speech": "tr-TR"}
 }
 
 class VoiceProcessor:
@@ -57,41 +68,103 @@ class VoiceProcessor:
 
     @staticmethod
     async def transcribe_voice(file_path: str, language: str) -> Optional[str]:
-        """Transcribe voice to text"""
+        """Transcribe voice to text using both Whisper and Google Speech Recognition"""
         try:
-            # Get language code from supported languages
-            lang_code = SUPPORTED_LANGUAGES.get(language, "en")
-            
+            # First attempt with Whisper
+            lang_code = SUPPORTED_LANGUAGES[language]["code"]
             result = whisper_model.transcribe(
                 file_path,
                 language=lang_code,
                 fp16=False
             )
-            return result["text"].strip()
+            text = result["text"].strip()
+            
+            # If Whisper fails or returns empty, try Google Speech Recognition
+            if not text:
+                wav_path = file_path.replace(".ogg", ".wav")
+                
+                # Convert to WAV using ffmpeg
+                stream = ffmpeg.input(file_path)
+                stream = ffmpeg.output(stream, wav_path)
+                ffmpeg.run(stream, overwrite_output=True, capture_stdout=True, capture_stderr=True)
+                
+                # Use Google Speech Recognition
+                recognizer = sr.Recognizer()
+                with sr.AudioFile(wav_path) as source:
+                    audio_data = recognizer.record(source)
+                    text = recognizer.recognize_google(
+                        audio_data, 
+                        language=SUPPORTED_LANGUAGES[language]["speech"]
+                    )
+                
+                await VoiceProcessor.cleanup_files(wav_path)
+            
+            return text
+            
         except Exception as e:
             print(f"Transcription error: {e}")
             return None
         finally:
-            # Clean up the voice file immediately after transcription
             await VoiceProcessor.cleanup_files(file_path)
 
 async def handle_rate_limit(telegram_id: int) -> bool:
     """Handle request rate limiting"""
     now = asyncio.get_event_loop().time()
     if telegram_id in user_last_request_time:
-        if (now - user_last_request_time[telegram_id]) < 1.5:  # Increased to 1.5 seconds
+        if (now - user_last_request_time[telegram_id]) < 1.5:
             return True
     user_last_request_time[telegram_id] = now
     return False
+
+@router.message(Command("chat"))
+@router.message(lambda message: any(message.text == buttons[lang]["btn_new_chat"] for lang in ["uz", "ru", "eng"]))
+async def start_chat(message: types.Message):
+    """Start AI chatbot with user."""
+    telegram_id = message.from_user.id
+    user = await db.select_user(telegram_id=telegram_id)
+    language = user["language"] if user else "uz"
+
+    if telegram_id not in user_sessions:
+        user_sessions[telegram_id] = {
+            "chat": model.start_chat(),
+            "message_count": 0,
+            "language": language
+        }
+
+    await message.answer(
+        text=messages[language]["start"],
+        parse_mode=ParseMode.HTML,
+        reply_markup=get_keyboard(language)
+    )
+
+@router.message(Command("stop"))
+async def stop_chat(message: types.Message):
+    """Stop the chat session."""
+    telegram_id = message.from_user.id
+    user = await db.select_user(telegram_id=telegram_id)
+    language = user["language"] if user else "uz"
+
+    if telegram_id in user_sessions:
+        del user_sessions[telegram_id]
+        await message.answer(
+            text=messages[language]["stop"],
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_keyboard(language)
+        )
+    else:
+        await message.answer(
+            text=messages[language]["not_started"],
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_keyboard(language)
+        )
 
 @router.message(F.voice)
 async def handle_voice(message: types.Message):
     """Handle voice messages"""
     telegram_id = message.from_user.id
     user = await db.select_user(telegram_id=telegram_id)
-    language = user["language"] if user else "eng"
+    language = user["language"] if user else "uz"
     
-    # Session check
     if telegram_id not in user_sessions:
         await message.answer(
             text=messages[language]["not_started"],
@@ -99,7 +172,6 @@ async def handle_voice(message: types.Message):
         )
         return
     
-    # Rate limit check
     if await handle_rate_limit(telegram_id):
         await message.answer(
             text=messages[language]["time_waiter"],
@@ -147,7 +219,6 @@ async def handle_voice(message: types.Message):
             parse_mode=ParseMode.HTML
         )
     finally:
-        # Ensure cleanup happens even if an error occurs
         if voice_path:
             await VoiceProcessor.cleanup_files(voice_path)
 
@@ -155,7 +226,7 @@ async def process_message(message: types.Message, text: Optional[str] = None):
     """Process messages (both voice and text)"""
     telegram_id = message.from_user.id
     user = await db.select_user(telegram_id=telegram_id)
-    language = user["language"] if user else "eng"
+    language = user["language"] if user else "uz"
     
     session = user_sessions.get(telegram_id)
     if not session:
@@ -165,7 +236,6 @@ async def process_message(message: types.Message, text: Optional[str] = None):
         )
         return
     
-    # Message limit check
     if session["message_count"] >= 20:
         del user_sessions[telegram_id]
         await message.answer(
@@ -184,9 +254,11 @@ async def process_message(message: types.Message, text: Optional[str] = None):
         response = session["chat"].send_message(input_text)
         session["message_count"] += 1
         
+        formatted_response = format_text(response.text)
+        
         await thinking_msg.delete()
         await message.answer(
-            text=response.text,
+            text=formatted_response,
             parse_mode=ParseMode.HTML,
             reply_markup=get_keyboard(language)
         )
