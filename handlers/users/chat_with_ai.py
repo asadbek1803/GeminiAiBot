@@ -142,7 +142,7 @@ class VoiceProcessor:
 
 # Message Handlers
 @router.message(Command("chat"))
-@router.message(lambda message: message.text and any(message.text == buttons[lang]["btn_new_chat"] for lang in ["uz", "ru", "eng"]))
+@router.message(lambda message: message.text and any(message.text == buttons[lang]["btn_new_chat"] for lang in ["uz", "ru", "eng", "tr"]))
 async def start_chat(message: types.Message):
     """Start AI chatbot with user."""
     telegram_id = message.from_user.id
@@ -166,7 +166,7 @@ async def start_chat(message: types.Message):
     )
 
 @router.message(Command("stop"))
-@router.message(lambda message: message.text and any(message.text == buttons[lang]["btn_stop"] for lang in ["uz", "ru", "eng"]))
+@router.message(lambda message: message.text and any(message.text == buttons[lang]["btn_stop"] for lang in ["uz", "ru", "eng", "tr"]))
 async def stop_chat(message: types.Message):
     """Stop the chat session."""
     telegram_id = message.from_user.id
@@ -259,7 +259,7 @@ async def handle_text(message: types.Message):
     telegram_id = message.from_user.id
     
     # Skip processing for command buttons
-    if any(message.text == buttons[lang][btn] for lang in ["uz", "ru", "eng"] 
+    if any(message.text == buttons[lang][btn] for lang in ["uz", "ru", "eng", "tr"] 
            for btn in ["btn_new_chat", "btn_stop", "btn_continue", "btn_change_lang"]):
         return
     

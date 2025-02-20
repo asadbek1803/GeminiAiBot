@@ -15,7 +15,7 @@ router = Router()
 def language_keyboard():
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="🇺🇿 O'zbek"), KeyboardButton(text="🇷🇺 Русский"), KeyboardButton(text='🇺🇸 English')]
+            [KeyboardButton(text="🇺🇿 O'zbek"), KeyboardButton(text="🇷🇺 Русский"), KeyboardButton(text='🇺🇸 English'), KeyboardButton(text="🇹🇷 Türkçe")]
         ],
         resize_keyboard=True
     )
@@ -56,22 +56,24 @@ async def do_start(message: types.Message):
 @router.message(Command("change_language"))
 @router.message(lambda message: message.text == buttons["uz"]["btn_change_lang"] or
                                 message.text == buttons["ru"]["btn_change_lang"] or
-                                message.text == buttons["eng"]["btn_change_lang"])
+                                message.text == buttons["eng"]["btn_change_lang"] or
+                                message.text == buttons["tr"]["btn_change_lang"]
+                                )
 async def get_lang_keyboards(message: types.Message):
     msg = await bot.send_message(
         chat_id=message.from_user.id,
-        text="🌍 Iltimos, yangi tilni tanlang:\n\n🇺🇿 O‘zbekcha | 🇷🇺 Русский | 🇺🇸 English",
+        text="🌍 Iltimos, yangi tilni tanlang:\n\n🇺🇿 O‘zbekcha | 🇷🇺 Русский | 🇺🇸 English |  🇹🇷 Türkçe",
         reply_markup=language_keyboard()
     )
 
-@router.message(lambda message: message.text in ["🇺🇿 O'zbek", "🇷🇺 Русский", "🇺🇸 English"])
+@router.message(lambda message: message.text in ["🇺🇿 O'zbek", "🇷🇺 Русский", "🇺🇸 English", "🇹🇷 Türkçe"])
 async def create_or_update_account(message: types.Message):
     """Foydalanuvchini bazaga qo'shish yoki tilini yangilash."""
     telegram_id = message.from_user.id
     full_name = message.from_user.full_name
     username = message.from_user.username
     created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    language_map = {"🇺🇿 O'zbek": "uz", "🇷🇺 Русский": "ru", "🇺🇸 English": "eng"}
+    language_map = {"🇺🇿 O'zbek": "uz", "🇷🇺 Русский": "ru", "🇺🇸 English": "eng", "🇹🇷 Türkçe": "tr"}
     language = language_map[message.text]
 
     welcome_messages = {
@@ -80,13 +82,16 @@ async def create_or_update_account(message: types.Message):
         "ru": ("Аккаунт успешно создан ✅", 
                f"Привет <b>{full_name}</b>! Добро пожаловать в наш AI-бот Gemini 😊"),
         "eng": ("Account created successfully ✅", 
-                f"Hello <b>{full_name}</b>! Welcome to our Gemini AI bot 😊")
+                f"Hello <b>{full_name}</b>! Welcome to our Gemini AI bot 😊"),
+        "tr": ("Hesap başarıyla oluşturuldu ✅",
+               f"Merhaba <b>{full_name}</b>! Gemini AI botumuza hoş geldiniz 😊")
     }
 
     update_messages = {
         "uz": "Til muvaffiqiyatli yangilandi ✅",
         "ru": "Язык успешно обновлен ✅",
-        "eng": "The language has been updated successfully ✅"
+        "eng": "The language has been updated successfully ✅",
+        "tr": "Dil başarıyla güncellendi ✅"
     }
     try:
         user = await db.select_user(telegram_id=telegram_id)
