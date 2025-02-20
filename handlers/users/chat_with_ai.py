@@ -77,22 +77,27 @@ class VoiceProcessor:
         wav_path = ogg_path.replace(".ogg", ".wav")
         
         try:
-            # First attempt: Use direct ffmpeg command for better control
+            # Use direct subprocess call to ffmpeg (more reliable)
             if IS_LINUX:
                 cmd = ["ffmpeg", "-i", ogg_path, "-ar", "16000", "-ac", "1", "-f", "wav", wav_path, "-y"]
             else:
+                # For Windows, use imageio_ffmpeg to locate the binary
                 import imageio_ffmpeg
                 ffmpeg_cmd = imageio_ffmpeg.get_ffmpeg_exe()
                 cmd = [ffmpeg_cmd, "-i", ogg_path, "-ar", "16000", "-ac", "1", "-f", "wav", wav_path, "-y"]
             
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            result = subprocess.run(cmd, capture_output=True, text=True, check=False)
             
-            if not os.path.exists(wav_path) or os.path.getsize(wav_path) == 0:
+            if result.returncode != 0:
                 print(f"FFmpeg conversion failed: {result.stderr}")
-                raise Exception("FFmpeg conversion produced empty file")
+                raise Exception(f"FFmpeg conversion failed with exit code {result.returncode}")
                 
+            if not os.path.exists(wav_path) or os.path.getsize(wav_path) == 0:
+                print(f"FFmpeg conversion produced empty file")
+                raise Exception("FFmpeg conversion produced empty file")
+                    
             return wav_path
-            
+                
         except Exception as e:
             print(f"Error converting audio: {str(e)}")
             return None
