@@ -1,10 +1,11 @@
 import asyncio
 import os
+import json
 from typing import Optional
-import whisper
+from vosk import Model, KaldiRecognizer
+import wave
 import google.generativeai as ai
-import speech_recognition as sr
-import ffmpeg
+
 import re
 from aiogram import Router, types, F
 from aiogram.filters import Command
@@ -14,12 +15,20 @@ from loader import bot, db
 from data.config import API_KEY
 from componets.messages import buttons, messages
 
+IS_LINUX = os.name == "posix"
+
+# For OGG to WAV conversion
+if not IS_LINUX:
+    import imageio_ffmpeg as ffmpeg
+else:
+    import ffmpeg
+
 # AI model configuration
 ai.configure(api_key=API_KEY)
 model = ai.GenerativeModel("gemini-pro")
 
-# Initialize Whisper model
-whisper_model = whisper.load_model("small")
+# Vosk model path - you'll need to download the appropriate model
+VOSK_MODEL_PATH = "vosk-model-small-en"
 
 router = Router()
 
@@ -45,17 +54,18 @@ def format_text(text):
     text = re.sub(r"`([^`]*)`", r"<code>\1</code>", text)
     return text
 
-# Supported languages
+# Supported languages and their Vosk model mappings
 SUPPORTED_LANGUAGES = {
-    "eng": {"code": "en", "speech": "en-US"},
-    "ru": {"code": "ru", "speech": "ru-RU"},
-    "uz": {"code": "uz", "speech": "uz-UZ"},
-    "tr": {"code": "tr", "speech": "tr-TR"}
+    "eng": {"code": "en", "vosk_model": "vosk-model-small-en"},
+    "ru": {"code": "ru", "vosk_model": "vosk-model-small-ru"},
+    "uz": {"code": "uz", "vosk_model": "vosk-model-small-uz"},
+    "tr": {"code": "tr", "vosk_model": "vosk-model-small-tr"}
 }
 
 class VoiceProcessor:
-    """Voice processing helper class"""
-    
+    """Voice processing helper class using Vosk"""
+    _models = {}  # Cache for loaded models
+
     @staticmethod
     async def cleanup_files(*file_paths: str):
         """Clean up temporary files"""
@@ -67,45 +77,81 @@ class VoiceProcessor:
                 print(f"Error cleaning up file {file_path}: {e}")
 
     @staticmethod
-    async def transcribe_voice(file_path: str, language: str) -> Optional[str]:
-        """Transcribe voice to text using both Whisper and Google Speech Recognition"""
+    async def convert_ogg_to_wav(ogg_path: str) -> str:
+        """Convert OGG to WAV format for Vosk processing"""
+        wav_path = ogg_path.replace(".ogg", ".wav")
+        
+        # Convert to WAV using ffmpeg
+        if IS_LINUX:
+            stream = ffmpeg.input(ogg_path)
+            stream = ffmpeg.output(stream, wav_path, ar='16000')
+            ffmpeg.run(stream, overwrite_output=True, capture_stdout=True, capture_stderr=True)
+        else:
+            ffmpeg_cmd = ffmpeg.get_ffmpeg_exe()
+            os.system(f'"{ffmpeg_cmd}" -i "{ogg_path}" -ar 16000 -ac 1 "{wav_path}" -y')
+            
+        return wav_path
+
+    @classmethod
+    async def get_vosk_model(cls, language: str):
+        """Get or load Vosk model for specified language"""
+        model_name = SUPPORTED_LANGUAGES[language]["vosk_model"]
+        
+        if model_name not in cls._models:
+            try:
+                cls._models[model_name] = Model(model_name)
+            except Exception as e:
+                print(f"Error loading Vosk model {model_name}: {e}")
+                # Fallback to English model if the requested language model is unavailable
+                fallback_model = "vosk-model-small-en"
+                if fallback_model not in cls._models:
+                    cls._models[fallback_model] = Model(fallback_model)
+                return cls._models[fallback_model]
+                
+        return cls._models[model_name]
+
+    @classmethod
+    async def transcribe_voice(cls, file_path: str, language: str) -> Optional[str]:
+        """Transcribe voice to text using Vosk"""
+        wav_path = None
         try:
-            # First attempt with Whisper
-            lang_code = SUPPORTED_LANGUAGES[language]["code"]
-            result = whisper_model.transcribe(
-                file_path,
-                language=lang_code,
-                fp16=False
-            )
-            text = result["text"].strip()
+            # Convert OGG to WAV for processing
+            wav_path = await cls.convert_ogg_to_wav(file_path)
             
-            # If Whisper fails or returns empty, try Google Speech Recognition
-            if not text:
-                wav_path = file_path.replace(".ogg", ".wav")
-                
-                # Convert to WAV using ffmpeg
-                stream = ffmpeg.input(file_path)
-                stream = ffmpeg.output(stream, wav_path)
-                ffmpeg.run(stream, overwrite_output=True, capture_stdout=True, capture_stderr=True)
-                
-                # Use Google Speech Recognition
-                recognizer = sr.Recognizer()
-                with sr.AudioFile(wav_path) as source:
-                    audio_data = recognizer.record(source)
-                    text = recognizer.recognize_google(
-                        audio_data, 
-                        language=SUPPORTED_LANGUAGES[language]["speech"]
-                    )
-                
-                await VoiceProcessor.cleanup_files(wav_path)
+            # Get appropriate Vosk model for language
+            vosk_model = await cls.get_vosk_model(language)
             
-            return text
+            # Process audio with Vosk
+            wf = wave.open(wav_path, "rb")
+            if wf.getnchannels() != 1 or wf.getsampwidth() != 2 or wf.getcomptype() != "NONE":
+                print("Audio file must be WAV format mono PCM.")
+                return None
+                
+            recognizer = KaldiRecognizer(vosk_model, wf.getframerate())
+            recognizer.SetWords(True)
             
+            results = []
+            while True:
+                data = wf.readframes(4000)
+                if len(data) == 0:
+                    break
+                if recognizer.AcceptWaveform(data):
+                    part_result = json.loads(recognizer.Result())
+                    results.append(part_result.get('text', ''))
+            
+            final_result = json.loads(recognizer.FinalResult())
+            results.append(final_result.get('text', ''))
+            
+            text = ' '.join([r for r in results if r])
+            return text if text else None
+
         except Exception as e:
-            print(f"Transcription error: {e}")
+            print(f"Vosk transcription error: {e}")
             return None
         finally:
-            await VoiceProcessor.cleanup_files(file_path)
+            await cls.cleanup_files(file_path)
+            if wav_path:
+                await cls.cleanup_files(wav_path)
 
 async def handle_rate_limit(telegram_id: int) -> bool:
     """Handle request rate limiting"""
@@ -191,7 +237,7 @@ async def handle_voice(message: types.Message):
         voice_path = f"temp_voice_{message.message_id}.ogg"
         await bot.download_file(voice.file_path, voice_path)
         
-        # Transcribe voice
+        # Transcribe voice using Vosk
         voice_text = await VoiceProcessor.transcribe_voice(voice_path, language)
         
         if not voice_text:
