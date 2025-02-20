@@ -55,7 +55,8 @@ messages = {
         "start_command": "<b> 🤖 AI Chatbot bilan suhbatni boshlash uchun /chat buyrug'ini yuboring yoki pastdagi tugmalardan foydalaning. \n\n ❌ Chiqish uchun /stop ni yuboring.</b>",
         "voice_processing": "🎤 Ovozli xabarni qayta ishlayman...",
         "voice_error": "❌ Ovozli xabarni qayta ishlashda xatolik yuz berdi. Iltimos, qaytadan urinib ko'ring.",
-        "voice_recognized": "🎯 Sizning xabaringiz: <i>{text}</i>"
+        "voice_recognized": "🎯 Sizning xabaringiz: <i>{text}</i>",
+        "time_waiter": "Server hozir band kutish vaqti: {minute}"
     },
     "ru": {
         "choose_lang": "🌍 Пожалуйста, выберите язык:\n\n🇺🇿 O'zbekcha | 🇷🇺 Русский | 🇺🇸 English | 🇹🇷 Türkçe",
@@ -70,7 +71,9 @@ messages = {
         "start_command": "<b> 🤖 Отправьте команду /chat или воспользуйтесь кнопками ниже, чтобы начать разговор с AI Chatbot. \n\n ❌ Отправьте /stop для выхода.</b>",
         "voice_processing": "🎤 Обрабатываю голосовое сообщение...",
         "voice_error": "❌ Ошибка при обработке голосового сообщения. Пожалуйста, попробуйте снова.",
-        "voice_recognized": "🎯 Ваше сообщение: <i>{text}</i>"
+        "voice_recognized": "🎯 Ваше сообщение: <i>{text}</i>",
+        "time_waiter": "Server hozir band kutish vaqti: {minute}"
+
     },
     "eng": {
         "choose_lang": "🌍 Please choose a language:\n\n🇺🇿 O'zbekcha | 🇷🇺 Русский | 🇺🇸 English | 🇹🇷 Türkçe",
@@ -85,7 +88,8 @@ messages = {
         "start_command": "<b> 🤖 Send the /chat command or use the buttons below to start a conversation with the AI Chatbot. \n\n ❌ Send /stop to exit.</b>",
         "voice_processing": "🎤 Processing voice message...",
         "voice_error": "❌ Error processing voice message. Please try again.",
-        "voice_recognized": "🎯 Your message: <i>{text}</i>"
+        "voice_recognized": "🎯 Your message: <i>{text}</i>",
+        "time_waiter": "Server hozir band kutish vaqti: {minute}"
     },
     "tr": {
         "choose_lang": "🌍 Lütfen bir dil seçin:\n\n🇺🇿 O'zbekcha | 🇷🇺 Русский | 🇺🇸 English | 🇹🇷 Türkçe",
@@ -100,6 +104,7 @@ messages = {
         "start_command": "<b> 🤖 AI Chatbot ile sohbete başlamak için /chat komutunu gönderin veya aşağıdaki düğmeleri kullanın. \n\n ❌ Çıkmak için /stop gönderin.</b>",
         "voice_processing": "🎤 Ses mesajı işleniyor...",
         "voice_error": "❌ Ses mesajı işlenirken hata oluştu. Lütfen tekrar deneyin.",
-        "voice_recognized": "🎯 Mesajınız: <i>{text}</i>"
+        "voice_recognized": "🎯 Mesajınız: <i>{text}</i>",
+        "time_waiter": "Server hozir band kutish vaqti: {minute}"
     }
 }
