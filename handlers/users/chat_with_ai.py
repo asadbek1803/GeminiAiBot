@@ -314,7 +314,7 @@ async def process_message(message: types.Message, text: Optional[str] = None):
     except Exception as e:
         await safe_delete_message(thinking_msg)
         await message.answer(
-            text=messages[language]["error"].format(error=str(e)),
+            text="Xatolik yuz berdi!",
             parse_mode=ParseMode.HTML
         )
 
