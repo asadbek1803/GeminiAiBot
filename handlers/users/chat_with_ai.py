@@ -1,29 +1,24 @@
 import asyncio
 import os
 import json
-import subprocess
 from typing import Optional
-from vosk import Model, KaldiRecognizer
-import wave
-import google.generativeai as ai
-
+import assemblyai as aai
+from collections import defaultdict
+from datetime import datetime, timedelta
 import re
 from aiogram import Router, types, F
 from aiogram.filters import Command
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram.enums.parse_mode import ParseMode
 from loader import bot, db
-from data.config import API_KEY
+from data.config import API_KEY, ASSEMBLYAI_API_KEY
 from componets.messages import buttons, messages
+import google.generativeai as ai
 
-IS_LINUX = os.name == "posix"
-
-# AI model configuration
+# Configure AI models
+aai.settings.api_key = ASSEMBLYAI_API_KEY
 ai.configure(api_key=API_KEY)
 model = ai.GenerativeModel("gemini-pro")
-
-# Vosk model path - you'll need to download the appropriate model
-VOSK_MODEL_PATH = "vosk-model-small-en"
 
 router = Router()
 
@@ -46,19 +41,62 @@ def format_text(text):
     """Convert text to HTML format"""
     text = re.sub(r"\*\*([^*]+)\*\*", r"<b>\1</b>", text)
     text = re.sub(r"\*([^*]+)\*", r"<i>\1</i>", text)
-    text = re.sub(r"`([^`]*)`", r"<code>\1</code>", text)
+    text = re.sub(r"([^]*)", r"<code>\1</code>", text)
     return text
 
-# Supported languages and their Vosk model mappings
-SUPPORTED_LANGUAGES = {
-    "eng": {"code": "en", "vosk_model": "vosk-model-small-en"},
-    "ru": {"code": "ru", "vosk_model": "vosk-model-small-ru"},
-    "uz": {"code": "uz", "vosk_model": "vosk-model-small-en"},  # Fallback to English if Uzbek model unavailable
-    "tr": {"code": "tr", "vosk_model": "vosk-model-small-en"}   # Fallback to English if Turkish model unavailable
-}
+# Rate limiting configuration
+class VoiceRateLimiter:
+    def __init__(self):
+        self.active_users = defaultdict(int)
+        self.last_cleanup = datetime.now()
+        self.cleanup_interval = timedelta(minutes=5)
+        self.max_concurrent_users = 3
+        self.cooldown_period = timedelta(minutes=2)
+        self.user_cooldowns = {}
+
+    def cleanup_old_entries(self):
+        """Remove old entries from tracking"""
+        if datetime.now() - self.last_cleanup > self.cleanup_interval:
+            current_time = datetime.now()
+            self.user_cooldowns = {
+                user: time for user, time in self.user_cooldowns.items()
+                if current_time - time < self.cooldown_period
+            }
+            self.last_cleanup = current_time
+
+    async def check_rate_limit(self, user_id: int) -> tuple[bool, Optional[timedelta]]:
+        """
+        Check if user should be rate limited
+        Returns: (is_limited, wait_time)
+        """
+        self.cleanup_old_entries()
+        current_time = datetime.now()
+
+        # Check if user is in cooldown
+        if user_id in self.user_cooldowns:
+            wait_time = self.cooldown_period - (current_time - self.user_cooldowns[user_id])
+            if wait_time > timedelta(0):
+                return True, wait_time
+            else:
+                del self.user_cooldowns[user_id]
+
+        # Check concurrent users
+        if len(self.active_users) >= self.max_concurrent_users:
+            self.user_cooldowns[user_id] = current_time
+            return True, self.cooldown_period
+
+        self.active_users[user_id] = current_time
+        return False, None
+
+    def release_user(self, user_id: int):
+        """Release user from active processing"""
+        if user_id in self.active_users:
+            del self.active_users[user_id]
+
+rate_limiter = VoiceRateLimiter()
+
 class VoiceProcessor:
-    """Voice processing helper class using Vosk with improved error handling"""
-    _models = {}  # Cache for loaded models
+    """Voice processing helper class using AssemblyAI"""
 
     @staticmethod
     async def cleanup_files(*file_paths: str):
@@ -71,128 +109,37 @@ class VoiceProcessor:
                 print(f"Error cleaning up file {file_path}: {e}")
 
     @staticmethod
-    async def convert_ogg_to_wav(ogg_path: str) -> Optional[str]:
-        """Convert OGG to WAV format with enhanced error handling"""
-        wav_path = ogg_path.replace(".ogg", ".wav")
-        
+    async def transcribe_voice(file_path: str, language: str) -> Optional[str]:
+        """Transcribe voice to text using AssemblyAI"""
         try:
-            # Ensure input file exists and has content
-            if not os.path.exists(ogg_path) or os.path.getsize(ogg_path) == 0:
-                raise Exception("Input file is missing or empty")
+            # Create transcriber instance
+            transcriber = aai.Transcriber()
 
-            # Use platform-specific ffmpeg command
-            if IS_LINUX:
-                cmd = [
-                    "ffmpeg", "-y",  # Force overwrite
-                    "-i", ogg_path,  # Input file
-                    "-acodec", "pcm_s16le",  # Force correct audio codec
-                    "-ac", "1",  # Mono audio
-                    "-ar", "16000",  # 16kHz sample rate
-                    "-f", "wav",  # WAV format
-                    wav_path
-                ]
-            else:
-                import imageio_ffmpeg
-                ffmpeg_cmd = imageio_ffmpeg.get_ffmpeg_exe()
-                cmd = [
-                    ffmpeg_cmd, "-y",
-                    "-i", ogg_path,
-                    "-acodec", "pcm_s16le",
-                    "-ac", "1",
-                    "-ar", "16000",
-                    "-f", "wav",
-                    wav_path
-                ]
+            # Configure language if supported
+            config = {}
+            if language in ["en", "eng"]:
+                config["language_code"] = "en"
+            elif language == "ru":
+                config["language_code"] = "ru"
             
-            # Run ffmpeg with timeout
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+            # Start transcription
+            transcript = transcriber.transcribe(
+                file_path,
+                **config
             )
-            
-            try:
-                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=30.0)
-                if process.returncode != 0:
-                    raise Exception(f"FFmpeg conversion failed: {stderr.decode()}")
-            except asyncio.TimeoutError:
-                process.kill()
-                raise Exception("FFmpeg conversion timed out")
 
-            # Verify output file
-            if not os.path.exists(wav_path) or os.path.getsize(wav_path) < 1024:  # At least 1KB
-                raise Exception("Converted file is missing or too small")
+            if transcript.status == aai.TranscriptStatus.error:
+                raise Exception(f"Transcription failed: {transcript.error}")
 
-            return wav_path
-
-        except Exception as e:
-            print(f"Error converting audio: {str(e)}")
-            if os.path.exists(wav_path):
-                await VoiceProcessor.cleanup_files(wav_path)
-            return None
-
-    @classmethod
-    async def transcribe_voice(cls, file_path: str, language: str) -> Optional[str]:
-        """Transcribe voice to text with enhanced error handling"""
-        wav_path = None
-        try:
-            # Convert to WAV
-            wav_path = await cls.convert_ogg_to_wav(file_path)
-            if not wav_path:
-                raise Exception("Failed to convert audio file")
-
-            # Get model for language
-            try:
-                vosk_model = await cls.get_vosk_model(language)
-            except Exception as e:
-                raise Exception(f"Failed to load voice recognition model: {str(e)}")
-
-            # Open and verify WAV file
-            with wave.open(wav_path, "rb") as wf:
-                if wf.getnchannels() != 1 or wf.getsampwidth() != 2:
-                    raise Exception("Invalid audio format")
-
-                # Initialize recognizer
-                recognizer = KaldiRecognizer(vosk_model, wf.getframerate())
-                recognizer.SetWords(True)
-
-                # Process audio in chunks
-                text_parts = []
-                chunk_size = 4000  # Smaller chunks for better memory management
-                
-                while True:
-                    data = wf.readframes(chunk_size)
-                    if not data:
-                        break
-
-                    if recognizer.AcceptWaveform(data):
-                        result = json.loads(recognizer.Result())
-                        if result.get('text'):
-                            text_parts.append(result['text'])
-
-                # Get final result
-                final_result = json.loads(recognizer.FinalResult())
-                if final_result.get('text'):
-                    text_parts.append(final_result['text'])
-
-                # Combine results
-                full_text = ' '.join(text_parts).strip()
-                
-                if not full_text:
-                    raise Exception("No speech detected in audio")
-
-                return full_text
+            return transcript.text
 
         except Exception as e:
             print(f"Voice transcription error: {str(e)}")
             return None
 
         finally:
-            # Clean up temporary files
-            await cls.cleanup_files(file_path)
-            if wav_path:
-                await cls.cleanup_files(wav_path)
-
+            # Clean up the temporary file
+            await VoiceProcessor.cleanup_files(file_path)
 
 @router.message(Command("chat"))
 @router.message(lambda message: message.text and any(message.text == buttons[lang]["btn_new_chat"] for lang in ["uz", "ru", "eng"]))
@@ -239,7 +186,7 @@ async def stop_chat(message: types.Message):
 
 @router.message(F.voice)
 async def handle_voice(message: types.Message):
-    """Handle voice messages with comprehensive error handling"""
+    """Handle voice messages with rate limiting and AssemblyAI transcription"""
     telegram_id = message.from_user.id
     user = await db.select_user(telegram_id=telegram_id)
     language = user["language"] if user else "uz"
@@ -253,9 +200,11 @@ async def handle_voice(message: types.Message):
         return
     
     # Check rate limiting
-    if await handle_rate_limit(telegram_id):
+    is_limited, wait_time = await rate_limiter.check_rate_limit(telegram_id)
+    if is_limited:
+        wait_minutes = round(wait_time.total_seconds() / 60, 1)
         await message.answer(
-            text=messages[language]["time_waiter"],
+            text=messages[language]["time_waiter"].format(minutes=wait_minutes),
             parse_mode=ParseMode.HTML
         )
         return
@@ -302,23 +251,14 @@ async def handle_voice(message: types.Message):
         print(f"Voice processing error: {error_msg}")
         await thinking_msg.delete()
         await message.answer(
-            text=f"{messages[language]["voice_error"]}/n{error_msg}",
+            text=f"{messages[language]['voice_error']}\n{error_msg}",
             parse_mode=ParseMode.HTML
         )
     finally:
-        # Ensure cleanup
+        # Ensure cleanup and release rate limit
+        rate_limiter.release_user(telegram_id)
         if voice_path:
             await VoiceProcessor.cleanup_files(voice_path)
-
-
-async def handle_rate_limit(telegram_id: int) -> bool:
-    """Handle request rate limiting"""
-    now = asyncio.get_event_loop().time()
-    if telegram_id in user_last_request_time:
-        if (now - user_last_request_time[telegram_id]) < 1.5:
-            return True
-    user_last_request_time[telegram_id] = now
-    return False
 
 async def process_message(message: types.Message, text: Optional[str] = None):
     """Process messages (both voice and text)"""
