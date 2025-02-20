@@ -302,7 +302,7 @@ async def handle_voice(message: types.Message):
         print(f"Voice processing error: {error_msg}")
         await thinking_msg.delete()
         await message.answer(
-            text=messages[language]["voice_error"],
+            text=f"{messages[language]["voice_error"]}/n{error_msg}",
             parse_mode=ParseMode.HTML
         )
     finally:
