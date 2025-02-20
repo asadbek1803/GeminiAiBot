@@ -56,9 +56,8 @@ SUPPORTED_LANGUAGES = {
     "uz": {"code": "uz", "vosk_model": "vosk-model-small-en"},  # Fallback to English if Uzbek model unavailable
     "tr": {"code": "tr", "vosk_model": "vosk-model-small-en"}   # Fallback to English if Turkish model unavailable
 }
-
 class VoiceProcessor:
-    """Voice processing helper class using Vosk"""
+    """Voice processing helper class using Vosk with improved error handling"""
     _models = {}  # Cache for loaded models
 
     @staticmethod
@@ -73,129 +72,127 @@ class VoiceProcessor:
 
     @staticmethod
     async def convert_ogg_to_wav(ogg_path: str) -> Optional[str]:
-        """Convert OGG to WAV format for Vosk processing with robust error handling"""
+        """Convert OGG to WAV format with enhanced error handling"""
         wav_path = ogg_path.replace(".ogg", ".wav")
         
         try:
-            # Use direct subprocess call to ffmpeg (more reliable)
+            # Ensure input file exists and has content
+            if not os.path.exists(ogg_path) or os.path.getsize(ogg_path) == 0:
+                raise Exception("Input file is missing or empty")
+
+            # Use platform-specific ffmpeg command
             if IS_LINUX:
-                cmd = ["ffmpeg", "-i", ogg_path, "-ar", "16000", "-ac", "1", "-f", "wav", wav_path, "-y"]
+                cmd = [
+                    "ffmpeg", "-y",  # Force overwrite
+                    "-i", ogg_path,  # Input file
+                    "-acodec", "pcm_s16le",  # Force correct audio codec
+                    "-ac", "1",  # Mono audio
+                    "-ar", "16000",  # 16kHz sample rate
+                    "-f", "wav",  # WAV format
+                    wav_path
+                ]
             else:
-                # For Windows, use imageio_ffmpeg to locate the binary
                 import imageio_ffmpeg
                 ffmpeg_cmd = imageio_ffmpeg.get_ffmpeg_exe()
-                cmd = [ffmpeg_cmd, "-i", ogg_path, "-ar", "16000", "-ac", "1", "-f", "wav", wav_path, "-y"]
+                cmd = [
+                    ffmpeg_cmd, "-y",
+                    "-i", ogg_path,
+                    "-acodec", "pcm_s16le",
+                    "-ac", "1",
+                    "-ar", "16000",
+                    "-f", "wav",
+                    wav_path
+                ]
             
-            result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+            # Run ffmpeg with timeout
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
             
-            if result.returncode != 0:
-                print(f"FFmpeg conversion failed: {result.stderr}")
-                raise Exception(f"FFmpeg conversion failed with exit code {result.returncode}")
-                
-            if not os.path.exists(wav_path) or os.path.getsize(wav_path) == 0:
-                print(f"FFmpeg conversion produced empty file")
-                raise Exception("FFmpeg conversion produced empty file")
-                    
+            try:
+                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=30.0)
+                if process.returncode != 0:
+                    raise Exception(f"FFmpeg conversion failed: {stderr.decode()}")
+            except asyncio.TimeoutError:
+                process.kill()
+                raise Exception("FFmpeg conversion timed out")
+
+            # Verify output file
+            if not os.path.exists(wav_path) or os.path.getsize(wav_path) < 1024:  # At least 1KB
+                raise Exception("Converted file is missing or too small")
+
             return wav_path
-                
+
         except Exception as e:
             print(f"Error converting audio: {str(e)}")
+            if os.path.exists(wav_path):
+                await VoiceProcessor.cleanup_files(wav_path)
             return None
-
-    @classmethod
-    async def get_vosk_model(cls, language: str):
-        """Get or load Vosk model for specified language with fallback"""
-        model_path = SUPPORTED_LANGUAGES.get(language, SUPPORTED_LANGUAGES["eng"])["vosk_model"]
-        
-        # Always fallback to English if model doesn't exist
-        if not os.path.exists(model_path):
-            model_path = "vosk-model-small-en"
-            if not os.path.exists(model_path):
-                raise Exception(f"Vosk model not found: {model_path}")
-        
-        if model_path not in cls._models:
-            try:
-                cls._models[model_path] = Model(model_path)
-            except Exception as e:
-                print(f"Error loading Vosk model {model_path}: {e}")
-                # Hard fallback to English if available
-                fallback_model = "vosk-model-small-en"
-                if fallback_model not in cls._models and os.path.exists(fallback_model):
-                    cls._models[fallback_model] = Model(fallback_model)
-                    return cls._models[fallback_model]
-                raise
-                
-        return cls._models[model_path]
 
     @classmethod
     async def transcribe_voice(cls, file_path: str, language: str) -> Optional[str]:
-        """Transcribe voice to text using Vosk with robust error handling"""
+        """Transcribe voice to text with enhanced error handling"""
         wav_path = None
         try:
-            # Convert OGG to WAV for processing
+            # Convert to WAV
             wav_path = await cls.convert_ogg_to_wav(file_path)
             if not wav_path:
-                return None
-            
-            # Check if WAV file exists and is valid
-            if not os.path.exists(wav_path) or os.path.getsize(wav_path) < 100:
-                print(f"Invalid WAV file: {wav_path}")
-                return None
-            
-            # Get appropriate Vosk model for language
+                raise Exception("Failed to convert audio file")
+
+            # Get model for language
             try:
                 vosk_model = await cls.get_vosk_model(language)
             except Exception as e:
-                print(f"Could not load Vosk model: {e}")
-                return None
-            
-            # Process audio with Vosk
-            try:
-                wf = wave.open(wav_path, "rb")
-                
-                # Verify WAV format
-                if wf.getnchannels() != 1 or wf.getsampwidth() != 2 or wf.getcomptype() != "NONE":
-                    print(f"Audio file must be WAV format mono PCM. Converting...")
-                    # Try to re-convert with more specific parameters
-                    os.remove(wav_path)
-                    if IS_LINUX:
-                        cmd = ["ffmpeg", "-i", file_path, "-acodec", "pcm_s16le", "-ac", "1", "-ar", "16000", wav_path, "-y"]
-                    else:
-                        import imageio_ffmpeg
-                        ffmpeg_cmd = imageio_ffmpeg.get_ffmpeg_exe()
-                        cmd = [ffmpeg_cmd, "-i", file_path, "-acodec", "pcm_s16le", "-ac", "1", "-ar", "16000", wav_path, "-y"]
-                    
-                    subprocess.run(cmd, capture_output=True, check=True)
-                    wf = wave.open(wav_path, "rb")
-                
+                raise Exception(f"Failed to load voice recognition model: {str(e)}")
+
+            # Open and verify WAV file
+            with wave.open(wav_path, "rb") as wf:
+                if wf.getnchannels() != 1 or wf.getsampwidth() != 2:
+                    raise Exception("Invalid audio format")
+
+                # Initialize recognizer
                 recognizer = KaldiRecognizer(vosk_model, wf.getframerate())
                 recognizer.SetWords(True)
+
+                # Process audio in chunks
+                text_parts = []
+                chunk_size = 4000  # Smaller chunks for better memory management
                 
-                results = []
-                data_chunk = wf.readframes(4000)
-                while len(data_chunk) > 0:
-                    if recognizer.AcceptWaveform(data_chunk):
-                        part_result = json.loads(recognizer.Result())
-                        results.append(part_result.get('text', ''))
-                    data_chunk = wf.readframes(4000)
-                
+                while True:
+                    data = wf.readframes(chunk_size)
+                    if not data:
+                        break
+
+                    if recognizer.AcceptWaveform(data):
+                        result = json.loads(recognizer.Result())
+                        if result.get('text'):
+                            text_parts.append(result['text'])
+
+                # Get final result
                 final_result = json.loads(recognizer.FinalResult())
-                results.append(final_result.get('text', ''))
+                if final_result.get('text'):
+                    text_parts.append(final_result['text'])
+
+                # Combine results
+                full_text = ' '.join(text_parts).strip()
                 
-                text = ' '.join([r for r in results if r])
-                return text if text else None
-                
-            except Exception as e:
-                print(f"Error during Vosk processing: {e}")
-                return None
+                if not full_text:
+                    raise Exception("No speech detected in audio")
+
+                return full_text
 
         except Exception as e:
-            print(f"Vosk transcription error: {e}")
+            print(f"Voice transcription error: {str(e)}")
             return None
+
         finally:
+            # Clean up temporary files
             await cls.cleanup_files(file_path)
             if wav_path:
                 await cls.cleanup_files(wav_path)
+
 
 @router.message(Command("chat"))
 @router.message(lambda message: message.text and any(message.text == buttons[lang]["btn_new_chat"] for lang in ["uz", "ru", "eng"]))
@@ -242,11 +239,12 @@ async def stop_chat(message: types.Message):
 
 @router.message(F.voice)
 async def handle_voice(message: types.Message):
-    """Handle voice messages with improved error handling"""
+    """Handle voice messages with comprehensive error handling"""
     telegram_id = message.from_user.id
     user = await db.select_user(telegram_id=telegram_id)
     language = user["language"] if user else "uz"
     
+    # Verify chat session
     if telegram_id not in user_sessions:
         await message.answer(
             text=messages[language]["not_started"],
@@ -254,6 +252,7 @@ async def handle_voice(message: types.Message):
         )
         return
     
+    # Check rate limiting
     if await handle_rate_limit(telegram_id):
         await message.answer(
             text=messages[language]["time_waiter"],
@@ -261,6 +260,7 @@ async def handle_voice(message: types.Message):
         )
         return
     
+    # Show processing message
     thinking_msg = await message.answer(
         text=messages[language]["voice_processing"],
         parse_mode=ParseMode.HTML
@@ -268,24 +268,24 @@ async def handle_voice(message: types.Message):
     
     voice_path = None
     try:
+        # Verify voice message
+        if not message.voice or not message.voice.file_id:
+            raise Exception("Invalid voice message")
+
         # Download voice file
         voice = await bot.get_file(message.voice.file_id)
-        voice_path = f"temp_voice_{message.message_id}.ogg"
+        voice_path = f"temp_voice_{message.message_id}_{telegram_id}.ogg"
         await bot.download_file(voice.file_path, voice_path)
         
+        # Verify downloaded file
         if not os.path.exists(voice_path) or os.path.getsize(voice_path) < 100:
-            raise Exception("Voice file download failed or file is too small")
+            raise Exception("Voice file download failed")
             
-        # Transcribe voice using Vosk
+        # Transcribe voice
         voice_text = await VoiceProcessor.transcribe_voice(voice_path, language)
         
         if not voice_text:
-            await thinking_msg.delete()
-            await message.answer(
-                text=messages[language]["voice_error"],
-                parse_mode=ParseMode.HTML
-            )
-            return
+            raise Exception("Could not recognize speech in audio")
         
         # Show transcribed text
         await message.answer(
@@ -298,14 +298,18 @@ async def handle_voice(message: types.Message):
         await process_message(message, voice_text)
         
     except Exception as e:
+        error_msg = str(e)
+        print(f"Voice processing error: {error_msg}")
         await thinking_msg.delete()
         await message.answer(
-            text=messages[language]["error"].format(error=str(e)),
+            text=messages[language]["voice_error"],
             parse_mode=ParseMode.HTML
         )
     finally:
-        if voice_path and os.path.exists(voice_path):
+        # Ensure cleanup
+        if voice_path:
             await VoiceProcessor.cleanup_files(voice_path)
+
 
 async def handle_rate_limit(telegram_id: int) -> bool:
     """Handle request rate limiting"""
