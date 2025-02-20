@@ -22,6 +22,16 @@ model = ai.GenerativeModel("gemini-pro")
 
 router = Router()
 
+
+async def safe_delete_message(message: types.Message):
+    """Safely delete a message, catching any deletion errors"""
+    try:
+        await message.delete()
+    except Exception as e:
+        print(f"Error deleting message: {e}")
+        # Continue execution even if deletion fails
+        pass
+
 # Session management
 user_sessions = {}
 user_last_request_time = {}
@@ -236,6 +246,7 @@ async def handle_voice(message: types.Message):
         if not voice_text:
             raise Exception("Could not recognize speech in audio")
         
+        await safe_delete_message(thinking_msg)
         # Show transcribed text
         await message.answer(
             text=messages[language]["voice_recognized"].format(text=voice_text),
@@ -243,7 +254,7 @@ async def handle_voice(message: types.Message):
         )
         
         # Process with AI
-        await thinking_msg.delete()
+        
         await process_message(message, voice_text)
         
     except Exception as e:
@@ -294,14 +305,14 @@ async def process_message(message: types.Message, text: Optional[str] = None):
         
         formatted_response = format_text(response.text)
         
-        await thinking_msg.delete()
+        await safe_delete_message(thinking_msg)
         await message.answer(
             text=formatted_response,
             parse_mode=ParseMode.HTML,
             reply_markup=get_keyboard(language)
         )
     except Exception as e:
-        await thinking_msg.delete()
+        await safe_delete_message(thinking_msg)
         await message.answer(
             text=messages[language]["error"].format(error=str(e)),
             parse_mode=ParseMode.HTML
