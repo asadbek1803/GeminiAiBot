@@ -22,16 +22,6 @@ model = ai.GenerativeModel("gemini-pro")
 
 router = Router()
 
-
-async def safe_delete_message(message: types.Message):
-    """Safely delete a message, catching any deletion errors"""
-    try:
-        await message.delete()
-    except Exception as e:
-        print(f"Error deleting message: {e}")
-        # Continue execution even if deletion fails
-        pass
-
 # Session management
 user_sessions = {}
 user_last_request_time = {}
@@ -51,8 +41,16 @@ def format_text(text):
     """Convert text to HTML format"""
     text = re.sub(r"\*\*([^*]+)\*\*", r"<b>\1</b>", text)
     text = re.sub(r"\*([^*]+)\*", r"<i>\1</i>", text)
-    text = re.sub(r"([^]*)", r"<code>\1</code>", text)
+    text = re.sub(r"`([^`]+)`", r"<code>\1</code>", text)
     return text
+
+async def safe_delete_message(message: types.Message):
+    """Safely delete a message, catching any deletion errors"""
+    try:
+        await message.delete()
+    except Exception as e:
+        print(f"Error deleting message: {e}")
+        pass
 
 # Rate limiting configuration
 class VoiceRateLimiter:
@@ -75,14 +73,10 @@ class VoiceRateLimiter:
             self.last_cleanup = current_time
 
     async def check_rate_limit(self, user_id: int) -> tuple[bool, Optional[timedelta]]:
-        """
-        Check if user should be rate limited
-        Returns: (is_limited, wait_time)
-        """
+        """Check if user should be rate limited"""
         self.cleanup_old_entries()
         current_time = datetime.now()
 
-        # Check if user is in cooldown
         if user_id in self.user_cooldowns:
             wait_time = self.cooldown_period - (current_time - self.user_cooldowns[user_id])
             if wait_time > timedelta(0):
@@ -90,7 +84,6 @@ class VoiceRateLimiter:
             else:
                 del self.user_cooldowns[user_id]
 
-        # Check concurrent users
         if len(self.active_users) >= self.max_concurrent_users:
             self.user_cooldowns[user_id] = current_time
             return True, self.cooldown_period
@@ -122,17 +115,14 @@ class VoiceProcessor:
     async def transcribe_voice(file_path: str, language: str) -> Optional[str]:
         """Transcribe voice to text using AssemblyAI"""
         try:
-            # Create transcriber instance
             transcriber = aai.Transcriber()
-
-            # Configure language if supported
+            
             config = {}
             if language in ["en", "eng"]:
                 config["language_code"] = "en"
             elif language == "ru":
                 config["language_code"] = "ru"
             
-            # Start transcription
             transcript = transcriber.transcribe(
                 file_path,
                 **config
@@ -148,9 +138,9 @@ class VoiceProcessor:
             return None
 
         finally:
-            # Clean up the temporary file
             await VoiceProcessor.cleanup_files(file_path)
 
+# Message Handlers
 @router.message(Command("chat"))
 @router.message(lambda message: message.text and any(message.text == buttons[lang]["btn_new_chat"] for lang in ["uz", "ru", "eng"]))
 async def start_chat(message: types.Message):
@@ -159,12 +149,15 @@ async def start_chat(message: types.Message):
     user = await db.select_user(telegram_id=telegram_id)
     language = user["language"] if user else "uz"
 
-    if telegram_id not in user_sessions:
-        user_sessions[telegram_id] = {
-            "chat": model.start_chat(),
-            "message_count": 0,
-            "language": language
-        }
+    # Reset session if exists
+    if telegram_id in user_sessions:
+        del user_sessions[telegram_id]
+
+    user_sessions[telegram_id] = {
+        "chat": model.start_chat(),
+        "message_count": 0,
+        "language": language
+    }
 
     await message.answer(
         text=messages[language]["start"],
@@ -196,12 +189,11 @@ async def stop_chat(message: types.Message):
 
 @router.message(F.voice)
 async def handle_voice(message: types.Message):
-    """Handle voice messages with rate limiting and AssemblyAI transcription"""
+    """Handle voice messages"""
     telegram_id = message.from_user.id
     user = await db.select_user(telegram_id=telegram_id)
     language = user["language"] if user else "uz"
     
-    # Verify chat session
     if telegram_id not in user_sessions:
         await message.answer(
             text=messages[language]["not_started"],
@@ -209,7 +201,6 @@ async def handle_voice(message: types.Message):
         )
         return
     
-    # Check rate limiting
     is_limited, wait_time = await rate_limiter.check_rate_limit(telegram_id)
     if is_limited:
         wait_minutes = round(wait_time.total_seconds() / 60, 1)
@@ -219,7 +210,6 @@ async def handle_voice(message: types.Message):
         )
         return
     
-    # Show processing message
     thinking_msg = await message.answer(
         text=messages[language]["voice_processing"],
         parse_mode=ParseMode.HTML
@@ -227,49 +217,53 @@ async def handle_voice(message: types.Message):
     
     voice_path = None
     try:
-        # Verify voice message
         if not message.voice or not message.voice.file_id:
             raise Exception("Invalid voice message")
 
-        # Download voice file
         voice = await bot.get_file(message.voice.file_id)
         voice_path = f"temp_voice_{message.message_id}_{telegram_id}.ogg"
         await bot.download_file(voice.file_path, voice_path)
         
-        # Verify downloaded file
         if not os.path.exists(voice_path) or os.path.getsize(voice_path) < 100:
             raise Exception("Voice file download failed")
             
-        # Transcribe voice
         voice_text = await VoiceProcessor.transcribe_voice(voice_path, language)
         
         if not voice_text:
             raise Exception("Could not recognize speech in audio")
         
         await safe_delete_message(thinking_msg)
-        # Show transcribed text
         await message.answer(
             text=messages[language]["voice_recognized"].format(text=voice_text),
             parse_mode=ParseMode.HTML
         )
-        
-        # Process with AI
         
         await process_message(message, voice_text)
         
     except Exception as e:
         error_msg = str(e)
         print(f"Voice processing error: {error_msg}")
-        await thinking_msg.delete()
+        await safe_delete_message(thinking_msg)
         await message.answer(
             text=f"{messages[language]['voice_error']}\n{error_msg}",
             parse_mode=ParseMode.HTML
         )
     finally:
-        # Ensure cleanup and release rate limit
         rate_limiter.release_user(telegram_id)
         if voice_path:
             await VoiceProcessor.cleanup_files(voice_path)
+
+@router.message(F.text)
+async def handle_text(message: types.Message):
+    """Handle text messages"""
+    telegram_id = message.from_user.id
+    
+    # Skip processing for command buttons
+    if any(message.text == buttons[lang][btn] for lang in ["uz", "ru", "eng"] 
+           for btn in ["btn_new_chat", "btn_stop", "btn_continue", "btn_change_lang"]):
+        return
+    
+    await process_message(message)
 
 async def process_message(message: types.Message, text: Optional[str] = None):
     """Process messages (both voice and text)"""
@@ -281,17 +275,32 @@ async def process_message(message: types.Message, text: Optional[str] = None):
     if not session:
         await message.answer(
             text=messages[language]["not_started"],
-            parse_mode=ParseMode.HTML
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_keyboard(language)
         )
         return
     
+    # Check message limit
     if session["message_count"] >= 20:
         del user_sessions[telegram_id]
         await message.answer(
             text=messages[language]["limit_reached"],
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_keyboard(language)
+        )
+        return
+    
+    # Check rate limiting for text messages
+    current_time = datetime.now()
+    last_request_time = user_last_request_time.get(telegram_id)
+    if last_request_time and (current_time - last_request_time).total_seconds() < 1:
+        await message.answer(
+            text=messages[language]["too_fast"],
             parse_mode=ParseMode.HTML
         )
         return
+    
+    user_last_request_time[telegram_id] = current_time
     
     thinking_msg = await message.answer(
         text=messages[language]["thinking"],
@@ -312,10 +321,12 @@ async def process_message(message: types.Message, text: Optional[str] = None):
             reply_markup=get_keyboard(language)
         )
     except Exception as e:
+        print(f"Error processing message: {e}")
         await safe_delete_message(thinking_msg)
         await message.answer(
-            text="Xatolik yuz berdi!",
-            parse_mode=ParseMode.HTML
+            text=messages[language]["error"],
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_keyboard(language)
         )
 
 @router.message(lambda message: message.text and any(message.text == buttons[lang]["btn_continue"] for lang in ["uz", "ru", "eng"]))
@@ -337,4 +348,3 @@ async def continue_chat(message: types.Message):
             parse_mode=ParseMode.HTML,
             reply_markup=get_keyboard(language)
         )
-
