@@ -32,7 +32,7 @@ def get_keyboard(language):
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text=buttons[language]["btn_new_chat"]), KeyboardButton(text=buttons[language]["btn_stop"])],
-            [KeyboardButton(text=buttons[language]["btn_continue"]), KeyboardButton(text=buttons["btn_change_lang"])]
+            [KeyboardButton(text=buttons[language]["btn_continue"]), KeyboardButton(text=buttons[language]["btn_change_lang"])]
         ],
         resize_keyboard=True,
         one_time_keyboard=False
