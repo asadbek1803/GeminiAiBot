@@ -118,21 +118,24 @@ class VoiceProcessor:
         try:
             transcriber = aai.Transcriber()
             
-            # Get language code in the format AssemblyAI expects
-            lang_code = "en"  # Default language
+            # Определяем модель языка на основе выбранного языка
+            lang_model = "en_v2"  # По умолчанию английский
             if language in ["en", "eng"]:
-                lang_code = "en"
+                lang_model = "en_v2"
             elif language == "ru":
-                lang_code = "ru"
+                lang_model = "ru_v2"  # Русский
             elif language == "uz":
-                lang_code = "uz"  # Узбекский
+                lang_model = "global"  # Для узбекского используем глобальную модель
             elif language == "tr":
-                lang_code = "tr"  # Турецкий
+                lang_model = "global"  # Для турецкого используем глобальную модель
             
-            # Create a transcription config object
-            config = aai.TranscriptionConfig(language=lang_code)
+            # Создаем конфигурацию с указанием модели языка
+            config = aai.TranscriptionConfig(language_model=lang_model)
             
-            transcript = transcriber.transcribe(file_path, config=config)
+            transcript = transcriber.transcribe(
+                file_path,
+                config=config
+            )
 
             if transcript.status == aai.TranscriptStatus.error:
                 raise Exception(f"Transcription failed: {transcript.error}")
