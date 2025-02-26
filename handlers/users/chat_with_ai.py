@@ -14,7 +14,7 @@ from aiogram.enums.parse_mode import ParseMode
 from loader import bot, db
 from data.config import API_KEY, ASSEMBLYAI_API_KEY
 from componets.messages import buttons, messages
-import google.generativeai as ai
+import google.generativeai as genai
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -23,8 +23,14 @@ logger = logging.getLogger(__name__)
 # Configure AI models
 try:
     aai.settings.api_key = ASSEMBLYAI_API_KEY
-    ai.configure(api_key=API_KEY)
-    model = ai.GenerativeModel("gemini-pro")
+    genai.configure(api_key=API_KEY)
+    
+    # Получаем список доступных моделей
+    models_list = genai.list_models()
+    logger.info(f"Available models: {[m.name for m in models_list]}")
+    
+    # Используем правильное имя модели для Gemini
+    model = genai.GenerativeModel('gemini-2.0-flash')
     logger.info("AI models configured successfully")
 except Exception as e:
     logger.error(f"Error configuring AI models: {e}")
@@ -179,7 +185,7 @@ async def start_chat(message: types.Message):
             del user_sessions[telegram_id]
 
         user_sessions[telegram_id] = {
-            "chat": model.start_chat(),
+            "chat": model.start_chat(history=[]),
             "message_count": 0,
             "language": language
         }
@@ -362,8 +368,12 @@ async def process_message(message: types.Message, text: Optional[str] = None):
         input_text = text if text else message.text
         logger.info(f"Processing message from user {telegram_id}: {input_text[:50]}...")
         
+        # Получаем чат из сессии
+        chat = session["chat"]
+        
+        # Отправляем сообщение и получаем ответ
         response = await asyncio.wait_for(
-            session["chat"].send_message(input_text), 
+            asyncio.create_task(chat.send_message_async(input_text)), 
             timeout=60.0
         )
         
@@ -388,7 +398,7 @@ async def process_message(message: types.Message, text: Optional[str] = None):
         language = user["language"] if user and "language" in user else "uz"
         
         await message.answer(
-            text=messages.get(language, messages["uz"])["timeout"],
+            text=messages.get(language, messages["uz"]).get("timeout", "Timeout error occurred. Please try again."),
             parse_mode=ParseMode.HTML,
             reply_markup=get_keyboard(language)
         )
@@ -401,7 +411,7 @@ async def process_message(message: types.Message, text: Optional[str] = None):
         language = user["language"] if user and "language" in user else "uz"
         
         await message.answer(
-            text=messages.get(language, messages["uz"])["error"],
+            text=messages.get(language, messages["uz"]).get("error", "An error occurred. Please try again."),
             parse_mode=ParseMode.HTML,
             reply_markup=get_keyboard(language)
         )
@@ -454,7 +464,7 @@ async def change_language(message: types.Message):
         )
         
         await message.answer(
-            text=messages.get(current_language, messages["uz"])["select_language"],
+            text=messages.get(current_language, messages["uz"]).get("select_language", "Please select your language:"),
             parse_mode=ParseMode.HTML,
             reply_markup=lang_keyboard
         )
@@ -489,7 +499,7 @@ async def set_language(message: types.Message):
             user_sessions[telegram_id]["language"] = new_language
         
         await message.answer(
-            text=messages.get(new_language, messages["uz"])["language_changed"],
+            text=messages.get(new_language, messages["uz"]).get("language_changed", "Language has been changed."),
             parse_mode=ParseMode.HTML,
             reply_markup=get_keyboard(new_language)
         )
