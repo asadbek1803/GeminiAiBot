@@ -111,7 +111,7 @@ class VoiceProcessor:
             except Exception as e:
                 print(f"Error cleaning up file {file_path}: {e}")
 
-    @staticmethod
+    
     @staticmethod
     async def transcribe_voice(file_path: str, language: str) -> Optional[str]:
         """Transcribe voice to text using AssemblyAI"""
