@@ -250,9 +250,9 @@ async def handle_voice(message: types.Message):
         
         if not os.path.exists(voice_path) or os.path.getsize(voice_path) < 100:
             raise Exception("Voice file download failed")
-            
-        voice_text = await VoiceProcessor.transcribe_voice(voice_path, language)
         
+        voice_text = await VoiceProcessor.transcribe_voice(voice_path, language)
+        print(voice_text)
         if not voice_text:
             raise Exception("Could not recognize speech in audio")
         
