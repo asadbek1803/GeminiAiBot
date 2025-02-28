@@ -111,30 +111,21 @@ class VoiceProcessor:
             except Exception as e:
                 print(f"Error cleaning up file {file_path}: {e}")
 
-    
     @staticmethod
     async def transcribe_voice(file_path: str, language: str) -> Optional[str]:
         """Transcribe voice to text using AssemblyAI"""
         try:
             transcriber = aai.Transcriber()
             
-            # Определяем модель языка на основе выбранного языка
-            lang_model = "en_v2"  # По умолчанию английский
+            config = {}
             if language in ["en", "eng"]:
-                lang_model = "en_v2"
+                config["language_code"] = "en"
             elif language == "ru":
-                lang_model = "ru_v2"  # Русский
-            elif language == "uz":
-                lang_model = "global"  # Для узбекского используем глобальную модель
-            elif language == "tr":
-                lang_model = "global"  # Для турецкого используем глобальную модель
-            
-            # Создаем конфигурацию с указанием модели языка
-            config = aai.TranscriptionConfig(language_model=lang_model)
+                config["language_code"] = "ru"
             
             transcript = transcriber.transcribe(
                 file_path,
-                config=config
+                **config
             )
 
             if transcript.status == aai.TranscriptStatus.error:
