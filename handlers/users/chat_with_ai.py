@@ -2,7 +2,7 @@ import asyncio
 import os
 import json
 from typing import Optional
-import assemblyai as aai
+import aiohttp
 from collections import defaultdict
 from datetime import datetime, timedelta
 import re
@@ -11,12 +11,12 @@ from aiogram.filters import Command
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram.enums.parse_mode import ParseMode
 from loader import bot, db
-from data.config import API_KEY, ASSEMBLYAI_API_KEY
+from data.config import API_KEY, DEEPGRAM_API_KEY  # Замените ASSEMBLYAI_API_KEY на DEEPGRAM_API_KEY
 from componets.messages import buttons, messages
 import google.generativeai as ai
 
 # Configure AI models
-aai.settings.api_key = ASSEMBLYAI_API_KEY
+# Удалена конфигурация AssemblyAI
 ai.configure(api_key=API_KEY)
 model = ai.GenerativeModel("gemini-2.0-flash")
 
@@ -99,7 +99,7 @@ class VoiceRateLimiter:
 rate_limiter = VoiceRateLimiter()
 
 class VoiceProcessor:
-    """Voice processing helper class using AssemblyAI"""
+    """Voice processing helper class using Deepgram API"""
 
     @staticmethod
     async def cleanup_files(*file_paths: str):
@@ -113,25 +113,49 @@ class VoiceProcessor:
 
     @staticmethod
     async def transcribe_voice(file_path: str, language: str) -> Optional[str]:
-        """Transcribe voice to text using AssemblyAI"""
+        """Transcribe voice to text using Deepgram API"""
         try:
-            transcriber = aai.Transcriber()
+            # Чтение аудио файла
+            with open(file_path, 'rb') as audio:
+                audio_data = audio.read()
+
+            # Подготовка параметров для Deepgram API
+            url = "https://api.deepgram.com/v1/listen"
             
-            config = {}
+            headers = {
+                "Authorization": f"Token {DEEPGRAM_API_KEY}",
+                "Content-Type": "audio/ogg"  # Или другой подходящий тип для вашего аудио
+            }
+            
+            params = {}
+            # Настройка языка
             if language in ["en", "eng"]:
-                config["language_code"] = "en"
+                params["language"] = "en"
             elif language == "ru":
-                config["language_code"] = "ru"
+                params["language"] = "ru"
+            elif language == "uz":
+                params["language"] = "uz"  # Если Deepgram поддерживает узбекский
             
-            transcript = transcriber.transcribe(
-                file_path,
-                **config
-            )
-
-            if transcript.status == aai.TranscriptStatus.error:
-                raise Exception(f"Transcription failed: {transcript.error}")
-
-            return transcript.text
+            # Запрос к Deepgram API
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    url=f"{url}?{'&'.join([f'{k}={v}' for k, v in params.items()])}",
+                    headers=headers,
+                    data=audio_data
+                ) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        raise Exception(f"Deepgram API error: {response.status}, {error_text}")
+                    
+                    result = await response.json()
+                    
+                    # Получение текста из результата
+                    if "results" in result and "channels" in result["results"] and len(result["results"]["channels"]) > 0:
+                        alternatives = result["results"]["channels"][0]["alternatives"]
+                        if alternatives and len(alternatives) > 0:
+                            return alternatives[0].get("transcript", "")
+            
+            raise Exception("No transcription found in Deepgram response")
 
         except Exception as e:
             print(f"Voice transcription error: {str(e)}")
