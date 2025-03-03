@@ -11,12 +11,11 @@ from aiogram.filters import Command
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram.enums.parse_mode import ParseMode
 from loader import bot, db
-from data.config import API_KEY, DEEPGRAM_API_KEY  # Замените ASSEMBLYAI_API_KEY на DEEPGRAM_API_KEY
+from data.config import API_KEY, ASSEMBLYAI_API_KEY  # DEEPGRAM_API_KEY o'rniga ASSEMBLYAI_API_KEY ishlatiladi
 from componets.messages import buttons, messages
 import google.generativeai as ai
 
 # Configure AI models
-# Удалена конфигурация AssemblyAI
 ai.configure(api_key=API_KEY)
 model = ai.GenerativeModel("gemini-2.0-flash")
 
@@ -99,7 +98,7 @@ class VoiceRateLimiter:
 rate_limiter = VoiceRateLimiter()
 
 class VoiceProcessor:
-    """Voice processing helper class using Deepgram API"""
+    """Voice processing helper class using AssemblyAI API"""
 
     @staticmethod
     async def cleanup_files(*file_paths: str):
@@ -112,57 +111,111 @@ class VoiceProcessor:
                 print(f"Error cleaning up file {file_path}: {e}")
 
     @staticmethod
-    async def transcribe_voice(file_path: str, language: str) -> Optional[str]:
-        """Transcribe voice to text using Deepgram API"""
+    async def upload_to_assemblyai(file_path: str) -> Optional[str]:
+        """Upload audio file to AssemblyAI and get upload_url"""
         try:
-            # Чтение аудио файла
-            with open(file_path, 'rb') as audio:
-                audio_data = audio.read()
-
-            # Подготовка параметров для Deepgram API
-            url = "https://api.deepgram.com/v1/listen"
+            headers = {"authorization": ASSEMBLYAI_API_KEY}
+            async with aiohttp.ClientSession() as session:
+                # Read file in chunks for efficient upload
+                with open(file_path, 'rb') as audio_file:
+                    async with session.post(
+                        url="https://api.assemblyai.com/v2/upload",
+                        headers=headers,
+                        data=audio_file
+                    ) as response:
+                        if response.status != 200:
+                            error_text = await response.text()
+                            raise Exception(f"AssemblyAI upload error: {response.status}, {error_text}")
+                        
+                        upload_result = await response.json()
+                        return upload_result.get("upload_url")
             
+            return None
+        except Exception as e:
+            print(f"AssemblyAI upload error: {str(e)}")
+            return None
+
+    @staticmethod
+    async def transcribe_voice(file_path: str, language: str) -> Optional[str]:
+        """Transcribe voice to text using AssemblyAI API"""
+        try:
+            # Upload file to AssemblyAI
+            upload_url = await VoiceProcessor.upload_to_assemblyai(file_path)
+            if not upload_url:
+                raise Exception("Failed to upload audio to AssemblyAI")
+            
+            # Prepare language setting
+            language_code = "en"
+            if language == "ru":
+                language_code = "ru"
+            elif language == "uz":
+                language_code = "en"  
+                
+                
+                
+            # AssemblyAI might not support Uzbek, fallback to English
+            
+            # Create transcription request
             headers = {
-                "Authorization": f"Token {DEEPGRAM_API_KEY}",
-                "Content-Type": "audio/ogg"  # Или другой подходящий тип для вашего аудио
+                "authorization": ASSEMBLYAI_API_KEY,
+                "content-type": "application/json"
             }
             
-            params = {}
-            # Настройка языка
-            if language in ["en", "eng"]:
-                params["language"] = "en"
-            elif language == "ru":
-                params["language"] = "ru"
-            elif language == "uz":
-                params["language"] = "uz"  # Если Deepgram поддерживает узбекский
+            payload = {
+                "audio_url": upload_url,
+                "language_code": language_code
+            }
             
-            # Запрос к Deepgram API
             async with aiohttp.ClientSession() as session:
+                # Submit transcription request
                 async with session.post(
-                    url=f"{url}?{'&'.join([f'{k}={v}' for k, v in params.items()])}",
+                    url="https://api.assemblyai.com/v2/transcript",
                     headers=headers,
-                    data=audio_data
+                    json=payload
                 ) as response:
                     if response.status != 200:
                         error_text = await response.text()
-                        raise Exception(f"Deepgram API error: {response.status}, {error_text}")
+                        raise Exception(f"AssemblyAI transcription error: {response.status}, {error_text}")
                     
-                    result = await response.json()
+                    transcript_response = await response.json()
+                    transcript_id = transcript_response.get("id")
                     
-                    # Получение текста из результата
-                    if "results" in result and "channels" in result["results"] and len(result["results"]["channels"]) > 0:
-                        alternatives = result["results"]["channels"][0]["alternatives"]
-                        if alternatives and len(alternatives) > 0:
-                            return alternatives[0].get("transcript", "")
+                    if not transcript_id:
+                        raise Exception("No transcript ID returned from AssemblyAI")
+                    
+                    # Poll for completion
+                    polling_endpoint = f"https://api.assemblyai.com/v2/transcript/{transcript_id}"
+                    
+                    # Maximum polling attempts (30 seconds at 1s intervals)
+                    max_polls = 30
+                    polls = 0
+                    
+                    while polls < max_polls:
+                        await asyncio.sleep(1)
+                        async with session.get(polling_endpoint, headers=headers) as poll_response:
+                            if poll_response.status != 200:
+                                error_text = await poll_response.text()
+                                raise Exception(f"AssemblyAI polling error: {poll_response.status}, {error_text}")
+                            
+                            polling_result = await poll_response.json()
+                            status = polling_result.get("status")
+                            
+                            if status == "completed":
+                                return polling_result.get("text")
+                            elif status == "error":
+                                raise Exception(f"AssemblyAI transcription failed: {polling_result.get('error')}")
+                            
+                            polls += 1
+                    
+                    raise Exception("Transcription timed out")
             
-            raise Exception("No transcription found in Deepgram response")
-
         except Exception as e:
             print(f"Voice transcription error: {str(e)}")
             return None
-
+        
         finally:
             await VoiceProcessor.cleanup_files(file_path)
+
 
 # Message Handlers
 @router.message(Command("chat"))
@@ -252,8 +305,9 @@ async def handle_voice(message: types.Message):
             raise Exception("Voice file download failed")
         
         voice_text = await VoiceProcessor.transcribe_voice(voice_path, language)
-        print(voice_text)
-        if not voice_text:
+        print(f"Transcription result: {voice_text}")
+        
+        if not voice_text or not voice_text.strip():
             raise Exception("Could not recognize speech in audio")
         
         await safe_delete_message(thinking_msg)
@@ -274,7 +328,7 @@ async def handle_voice(message: types.Message):
         )
     finally:
         rate_limiter.release_user(telegram_id)
-        if voice_path:
+        if voice_path and os.path.exists(voice_path):
             await VoiceProcessor.cleanup_files(voice_path)
 
 @router.message(F.text)
